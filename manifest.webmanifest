@@ -1,0 +1,24 @@
+{
+  "name": "독서 도감",
+  "short_name": "독서 도감",
+  "description": "내려놨던 독서를 다시 시작하며 쓰는 기록. 읽는 책을 표본처럼 한 권씩 올린다.",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F1F4F6",
+  "theme_color": "#0E626D",
+  "categories": ["books", "lifestyle"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "읽는 중", "short_name": "읽는 중", "url": "./#/reading", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "히스토리", "short_name": "히스토리", "url": "./#/history", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] }
+  ]
+}

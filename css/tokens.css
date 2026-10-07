@@ -1,0 +1,178 @@
+/* tokens.css — 값(변수) 정의만 둔다.
+   색 리터럴이 허용되는 유일한 파일이다. 다른 CSS와 JS는 var(--*)만 쓴다.
+   새 색이 필요하면 여기에 라이트·다크 값을 함께 추가한다. */
+
+@font-face {
+  font-family: "Pretendard Variable";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("../fonts/PretendardVariable.subset.woff2") format("woff2");
+}
+/* 드문 한글 음절(완성형 2,350자 밖의 8,822자). 화면에 그런 글자가 나올 때만 내려받는다. */
+@font-face {
+  font-family: "Pretendard Variable Rest";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("../fonts/PretendardVariable.rest.woff2") format("woff2");
+  unicode-range: U+AC00-D7A3;
+}
+
+:root {
+  color-scheme: light;
+
+  /* 바탕과 글자 */
+  --bg: #F1F4F6;
+  --surface: #FFFFFF;
+  --surface-sunk: #E7ECEF;
+  --ink: #15202A;
+  --ink-soft: #414F5B;
+  --ink-faint: #5F6C78;
+  --line: #D5DCE2;
+  --line-strong: #AEB9C2;
+  --scrim: rgba(13, 20, 26, 0.46);
+
+  /* 하나뿐인 강조색: 가라앉은 청록 */
+  --accent: #0E626D;
+  --accent-fg: #FFFFFF;
+  --accent-soft: #DCEAEC;
+
+  /* 비어 있음·대기 */
+  --lack: #8F5310;
+  --lack-soft: #F4E8D7;
+
+  /* 위험·오류 */
+  --danger: #A3312A;
+  --danger-soft: #F8E2E0;
+
+  /* 리뷰 문서(노션식 블록). 값의 출처: heyman333/agent-notion-template-docs (MIT)의 template.html */
+  --n-bg: #FFFFFF;
+  --n-text: #2C2C2B;
+  --n-soft: #7D7A75;
+  --n-divider: rgba(28, 19, 1, 0.11);
+  --n-co-gray: #F9F8F7;
+  --n-co-blue: #E5F2FC;
+  --n-co-green: #E8F1EC;
+  --n-co-yellow: #F9F3DC;
+  --n-co-red: #FCE9E7;
+  --n-check: #2783DE;
+  --n-code: #CF5148;
+  --n-code-bg: rgba(33, 27, 23, 0.05);
+
+  /* 글자 */
+  --font-sans: "Pretendard Variable", "Pretendard Variable Rest", Pretendard, -apple-system, BlinkMacSystemFont, system-ui,
+    "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --fs-11: 0.6875rem;
+  --fs-12: 0.75rem;
+  --fs-13: 0.8125rem;
+  --fs-14: 0.875rem;
+  --fs-15: 0.9375rem;
+  --fs-16: 1rem;
+  --fs-18: 1.125rem;
+  --fs-20: 1.25rem;
+  --fs-24: 1.5rem;
+  --fs-28: 1.75rem;
+  --fs-34: 2.125rem;
+
+  /* 간격 (4px 단위) */
+  --s-1: 0.25rem;
+  --s-2: 0.5rem;
+  --s-3: 0.75rem;
+  --s-4: 1rem;
+  --s-5: 1.25rem;
+  --s-6: 1.5rem;
+  --s-8: 2rem;
+  --s-10: 2.5rem;
+  --s-12: 3rem;
+
+  /* 모서리: 바깥이 클수록 크게 */
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* 움직임: easing은 하나만 */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --t-1: 0.15s;
+  --t-2: 0.2s;
+  --t-3: 0.3s;
+
+  /* 틀 */
+  --gutter: clamp(16px, 4.6vw, 32px);
+  --col-gap: 2rem;
+  --top-h: 3.25rem;
+  --bar-h: 3.75rem;
+  --page-max: 60rem;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0E1418;
+    --surface: #161F26;
+    --surface-sunk: #0A0F12;
+    --ink: #E7ECEF;
+    --ink-soft: #B7C2CA;
+    --ink-faint: #8E9BA6;
+    --line: #27333C;
+    --line-strong: #40505C;
+    --scrim: rgba(0, 0, 0, 0.6);
+    --accent: #66C4CE;
+    --accent-fg: #0E1418;
+    --accent-soft: #15333A;
+    --lack: #E3A75E;
+    --lack-soft: #3A2B17;
+    --danger: #F0958C;
+    --danger-soft: #45201D;
+    --n-bg: #191919;
+    --n-text: #F0EFED;
+    --n-soft: #ADA9A3;
+    --n-divider: rgba(255, 255, 235, 0.1);
+    --n-co-gray: #202020;
+    --n-co-blue: #233850;
+    --n-co-green: #263D30;
+    --n-co-yellow: #504425;
+    --n-co-red: #502C29;
+    --n-check: #2783DE;
+    --n-code: #CF5148;
+    --n-code-bg: rgba(255, 255, 255, 0.055);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0E1418;
+  --surface: #161F26;
+  --surface-sunk: #0A0F12;
+  --ink: #E7ECEF;
+  --ink-soft: #B7C2CA;
+  --ink-faint: #8E9BA6;
+  --line: #27333C;
+  --line-strong: #40505C;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --accent: #66C4CE;
+  --accent-fg: #0E1418;
+  --accent-soft: #15333A;
+  --lack: #E3A75E;
+  --lack-soft: #3A2B17;
+  --danger: #F0958C;
+  --danger-soft: #45201D;
+  --n-bg: #191919;
+  --n-text: #F0EFED;
+  --n-soft: #ADA9A3;
+  --n-divider: rgba(255, 255, 235, 0.1);
+  --n-co-gray: #202020;
+  --n-co-blue: #233850;
+  --n-co-green: #263D30;
+  --n-co-yellow: #504425;
+  --n-co-red: #502C29;
+  --n-check: #2783DE;
+  --n-code: #CF5148;
+  --n-code-bg: rgba(255, 255, 255, 0.055);
+}

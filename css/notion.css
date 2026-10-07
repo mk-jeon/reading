@@ -1,0 +1,110 @@
+/* notion.css — 리뷰 문서. 노션의 블록 모양을 따른다.
+   치수와 색 토큰(--n-*)의 출처: heyman333/agent-notion-template-docs (MIT) 의 template.html
+   그림 문자는 쓰지 않는다. 페이지 아이콘과 콜아웃 아이콘은 선 아이콘으로 대신한다. */
+
+.dialog--doc { background: var(--n-bg); }
+.dialog--doc > .dialog-body { padding: 0; }
+.dialog-headline { display: flex; align-items: center; gap: var(--s-1); min-width: 0; }
+.dialog--page > .dialog-head { padding-left: var(--s-2); }
+.dialog-tools { display: flex; align-items: center; gap: var(--s-3); }
+.ndoc-status { font-size: var(--fs-12); color: var(--ink-faint); white-space: nowrap; }
+
+.ndoc {
+  width: 100%; max-width: 720px; margin-inline: auto;
+  padding: clamp(1.5rem, 6vw, 4.5rem) clamp(1rem, 5vw, 1.5rem) 30vh;
+  color: var(--n-text); font-size: 1rem; line-height: 1.5;
+}
+.ndoc-icon { display: grid; place-items: center; width: 4.25rem; height: 4.25rem; border-radius: 10px; background: var(--n-co-gray); }
+.ndoc h1 { margin: 0.5rem 0 0.25rem; font-size: clamp(1.875rem, 7.4vw, 2.5rem); font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; }
+.ndoc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.625rem; margin: 0 0 0.5rem; color: var(--n-soft); font-size: 0.875rem; }
+.ntag { display: inline-block; padding: 1px 8px; border-radius: 4px; background: var(--n-co-blue); color: var(--n-text); font-size: 0.8125rem; }
+.ndoc hr { margin: 0.25rem 0 1.5rem; border: 0; border-top: 1px solid var(--n-divider); }
+.ndoc-empty { color: var(--n-soft); }
+
+/* 읽기 */
+.ndoc h2 { margin: 1.6em 0 4px; font-size: 1.875em; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
+.ndoc h3 { margin: 1.2em 0 2px; font-size: 1.5em; font-weight: 600; line-height: 1.3; }
+.ndoc h4 { margin: 1em 0 2px; font-size: 1.25em; font-weight: 600; }
+.ndoc p { margin: 8px 0; }
+.ndoc ul,
+.ndoc ol { margin: 6px 0; padding-left: 26px; list-style: revert; }
+.ndoc li { margin: 3px 0; }
+.ndoc li::marker { color: var(--n-soft); }
+.ndoc strong { font-weight: 600; }
+.ndoc code { padding: 2px 5px; border-radius: 3px; background: var(--n-code-bg); color: var(--n-code); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 85%; }
+.ndoc blockquote { margin: 12px 0; padding: 0 14px; border-left: 3px solid var(--n-text); }
+.ndoc .callout { display: flex; gap: 10px; margin: 12px 0; padding: 12px; border-radius: 10px; background: var(--n-co-gray); font-size: 0.9375rem; }
+.ndoc .callout-blue { background: var(--n-co-blue); }
+.ndoc .callout-green { background: var(--n-co-green); }
+.ndoc .callout-yellow { background: var(--n-co-yellow); }
+.ndoc .callout-red { background: var(--n-co-red); }
+.callout-icon { flex: none; display: grid; place-items: center; height: 1.5em; }
+.ndoc details { margin: 8px 0; padding: 4px 0; }
+.ndoc summary { padding: 4px 6px; border-radius: 4px; font-weight: 600; cursor: pointer; }
+.ndoc details > p { margin-left: 22px; }
+.ndoc ul.todo { padding-left: 4px; list-style: none; }
+.ndoc .todo li { position: relative; padding-left: 26px; }
+.ndoc .todo input { position: absolute; left: 2px; top: 4px; width: 1rem; height: 1rem; margin: 0; accent-color: var(--n-check); }
+.ndoc .todo li.done { color: var(--n-soft); text-decoration: line-through; }
+
+/* 머리의 속성 줄 */
+.nprops { display: flex; flex-direction: column; margin: 0 0 1.25rem; }
+.nprop { display: grid; grid-template-columns: 5.25rem minmax(0, 1fr); gap: 0.5rem; align-items: start; min-height: 2.125rem; padding: 0.3125rem 0; }
+.nprop-key { color: var(--n-soft); font-size: 0.875rem; line-height: 1.5rem; }
+.nprop-val { min-width: 0; font-size: 0.9375rem; line-height: 1.5rem; }
+.nprop-input { display: block; width: 100%; padding: 0; border: 0; border-radius: 3px; background: transparent; color: inherit; font: inherit; line-height: 1.5rem; resize: none; overflow: hidden; }
+.nprop-input::placeholder { color: var(--n-soft); opacity: 0.7; }
+.nprop-input:focus-visible { outline: 0; background: var(--n-code-bg); }
+.star-row { display: inline-flex; gap: 2px; margin-top: -0.25rem; }
+.star-btn { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 4px; color: var(--n-soft); }
+.star-btn.is-on { color: var(--lack); }
+.star-btn.is-on svg { fill: currentColor; }
+.ndoc .stars { vertical-align: -3px; }
+
+/* 쓰기: 블록 한 줄이 입력칸 하나 */
+.nedit { display: flex; flex-direction: column; margin-top: 0.5rem; }
+.nb { display: flex; align-items: flex-start; gap: 0.25rem; padding: 2px 0; border-radius: 4px; }
+.nb-handle { flex: none; display: grid; place-items: center; width: 1.75rem; height: 1.875rem; border-radius: 4px; color: var(--n-soft); opacity: 0.5; transition: opacity var(--t-1) var(--ease); }
+.nb:focus-within .nb-handle { opacity: 1; }
+.nb-text,
+.nb-body {
+  display: block; flex: 1; width: 100%; min-width: 0; padding: 3px 4px;
+  border: 0; border-radius: 3px; background: transparent; color: inherit;
+  font: inherit; line-height: 1.5; resize: none; overflow: hidden;
+}
+.nb-text::placeholder,
+.nb-body::placeholder { color: var(--n-soft); opacity: 0.65; }
+.nb-text:focus-visible,
+.nb-body:focus-visible { outline: 0; background: var(--n-code-bg); }
+.nb--h1 { margin-top: 1.1em; }
+.nb--h1 .nb-text { font-size: 1.875em; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
+.nb--h2 { margin-top: 0.8em; }
+.nb--h2 .nb-text { font-size: 1.5em; font-weight: 600; line-height: 1.3; }
+.nb--h3 { margin-top: 0.6em; }
+.nb--h3 .nb-text { font-size: 1.25em; font-weight: 600; }
+.nb--h1 .nb-handle { margin-top: 0.45em; }
+.nb--h2 .nb-handle { margin-top: 0.2em; }
+.nb-mark { flex: none; width: 1.25rem; padding-top: 3px; color: var(--n-soft); line-height: 1.5; text-align: center; }
+.nb-check { flex: none; width: 1rem; height: 1rem; margin: 0.4375rem 0.125rem 0; accent-color: var(--n-check); }
+.nb.is-done .nb-text { color: var(--n-soft); text-decoration: line-through; }
+.nb--quote .nb-text { padding-left: 14px; border-left: 3px solid var(--n-text); border-radius: 0; }
+.nb--callout { margin: 6px 0; padding: 8px 10px 8px 2px; border-radius: 10px; background: var(--n-co-gray); }
+.nb--callout.nb-tone-blue { background: var(--n-co-blue); }
+.nb--callout.nb-tone-green { background: var(--n-co-green); }
+.nb--callout.nb-tone-yellow { background: var(--n-co-yellow); }
+.nb--callout.nb-tone-red { background: var(--n-co-red); }
+.nb--callout .nb-text { font-size: 0.9375rem; }
+.nb-tone { flex: none; display: grid; place-items: center; width: 1.75rem; height: 1.875rem; border-radius: 4px; }
+.nb-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nb--toggle .nb-text { font-weight: 600; }
+.nb-body { margin-left: 0.25rem; padding-left: 0.75rem; border-left: 1px solid var(--n-divider); border-radius: 0; font-size: 0.9375rem; }
+.nb-rule { flex: 1; align-self: center; padding: 0.625rem 0; }
+.ndoc .nb-rule hr { margin: 0; }
+.nb-add { display: inline-flex; align-items: center; align-self: flex-start; gap: 0.375rem; min-height: 2.5rem; margin-top: 0.5rem; padding: 0 0.625rem; border-radius: 6px; color: var(--n-soft); font-size: 0.875rem; font-weight: 500; }
+
+@media (hover: hover) {
+  .nb-add:hover,
+  .nb-handle:hover,
+  .nb-tone:hover,
+  .ndoc summary:hover { background: var(--n-code-bg); }
+}
