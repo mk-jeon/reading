@@ -43,7 +43,8 @@ p { text-wrap: pretty; }
   position: sticky; top: 0; z-index: 10;
   display: flex; align-items: center; justify-content: space-between; gap: var(--s-3);
   height: calc(var(--top-h) + var(--safe-t));
-  padding: var(--safe-t) max(var(--gutter), var(--safe-r)) 0 max(var(--gutter), var(--safe-l));
+  /* 넓은 화면에서는 안쪽 내용을 본문 단(--page-max)의 양 끝에 맞춘다 */
+  padding: var(--safe-t) max(var(--gutter), var(--safe-r), calc((100% - var(--page-max)) / 2 + var(--gutter))) 0 max(var(--gutter), var(--safe-l), calc((100% - var(--page-max)) / 2 + var(--gutter)));
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
@@ -61,7 +62,7 @@ p { text-wrap: pretty; }
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
   height: calc(var(--bar-h) + var(--safe-b));
-  padding: 0 max(var(--safe-r), 0px) var(--safe-b) max(var(--safe-l), 0px);
+  padding: 0 max(var(--safe-r), calc((100% - var(--page-max)) / 2)) var(--safe-b) max(var(--safe-l), calc((100% - var(--page-max)) / 2));
   background: var(--surface);
   border-top: 1px solid var(--line);
 }

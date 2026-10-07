@@ -1,7 +1,7 @@
 // config.js — 앱 전체가 함께 쓰는 고정값.
 
 export const APP_NAME = '독서 도감';
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '0.1.1';
 
 export const DATA_BRANCH = 'data';        // 기록(library.json, photos/)은 이 브랜치에만 쌓는다
 export const LIB_PATH = 'library.json';

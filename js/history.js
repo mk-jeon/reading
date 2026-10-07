@@ -41,8 +41,9 @@ function loader() {
 function resultLine(r) {
   if (!r) return null;
   if (r.viewer) {
+    if (!r.fetched) return h('p', { class: 'hist-result' }, '공개된 기록을 받지 못했습니다. 아직 올린 기록이 없거나 연결이 끊겨 있습니다.');
     return h('p', { class: 'hist-result' }, r.pending
-      ? `확인하지 않은 리뷰가 ${r.pending}건 있습니다. 분석은 기록 모드에서 할 수 있습니다.`
+      ? `공개된 기록을 새로 받았습니다. 확인하지 않은 리뷰가 ${r.pending}건 있습니다. 분석은 기록 모드에서 할 수 있습니다.`
       : '공개된 기록을 새로 받았습니다. 새로 읽을 리뷰는 없습니다.');
   }
   if (r.error) return h('p', { class: 'hist-result is-bad' }, r.error);
@@ -63,10 +64,11 @@ async function runCheck(rerender) {
   const started = performance.now();
   let result;
   try {
+    let fetched = false;
     if (state.mode === 'owner') await syncNow();
-    else if (state.mode === 'viewer') await refreshViewer();
+    else if (state.mode === 'viewer') fetched = await refreshViewer();
     if (canEdit()) result = await analyzeDelta();
-    else result = { viewer: true, pending: pendingReviews(state.lib).length };
+    else result = { viewer: true, fetched, pending: pendingReviews(state.lib).length };
   } catch (e) {
     result = { error: `확인하지 못했습니다. ${e.message || ''}`.trim() };
   }

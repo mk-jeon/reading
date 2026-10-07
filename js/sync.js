@@ -142,6 +142,7 @@ async function putPhoto(token, bookId, slot, v, blob) {
     method: 'PUT', token,
     body: { message: `사진: ${bookId} ${slot}`, content: await blobToB64(blob), branch: DATA_BRANCH },
   });
+  if (res.status === 409) throw new Conflict();   // 다른 기기의 쓰기와 겹쳤다: 처음부터 다시 맞춘다
   if (!res.ok) await fail(res, '사진 올리기');
 }
 

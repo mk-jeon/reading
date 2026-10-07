@@ -5,7 +5,7 @@
 // GitHub API와 기록 파일(library.json) 요청에는 끼어들지 않는다.
 // 파일 목록을 바꾸면 VERSION도 함께 올린다.
 
-const VERSION = 'dogam-v0.1.0';
+const VERSION = 'dogam-v0.1.1';
 const SHELL_CACHE = `${VERSION}-shell`;
 const PHOTO_CACHE = 'dogam-photos';
 const SHELL = [

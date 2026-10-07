@@ -190,8 +190,29 @@ try {
   await v.page.click('.detail-back');
   await tab(v.page, '히스토리');
   check('연혁 첫 줄(독서 재개)이 있다', (await v.page.textContent('.tl')).includes('독서 재개'));
+  await v.page.click('button:has-text("새 리뷰 확인")');
+  await v.page.waitForSelector('.hist-result', { timeout: 8000 });
+  check('올린 기록이 아직 없으면 받지 못했다고 알린다', (await v.page.textContent('.hist-result')).includes('받지 못했습니다'));
   check('구경 모드: 오류 없음', v.errors.length === 0, v.errors.join(' | '));
   await v.ctx.close();
+
+  const w = await newDevice(browser, base, gh, { width: 1440, height: 900 });
+  const edges = await w.page.evaluate(() => {
+    const main = document.querySelector('.main');
+    const cs = getComputedStyle(main);
+    const box = main.getBoundingClientRect();
+    const left = box.left + parseFloat(cs.paddingLeft);
+    const right = box.right - parseFloat(cs.paddingRight);
+    const tabs = [...document.querySelectorAll('.tab')].map((t) => t.getBoundingClientRect());
+    return {
+      brand: Math.abs(document.querySelector('.brand').getBoundingClientRect().left - left),
+      actions: Math.abs(document.querySelector('.topbar-actions').getBoundingClientRect().right - right),
+      tabsInside: tabs[0].left >= box.left - 1 && tabs[tabs.length - 1].right <= box.right + 1,
+    };
+  });
+  check('넓은 화면에서는 상단 바와 탭 바가 본문 단에 맞춰진다', edges.brand <= 1 && edges.actions <= 1 && edges.tabsInside, JSON.stringify(edges));
+  await shot(w.page, '18-wide-me');
+  await w.ctx.close();
 
   // 2) 이 기기에서만 써 보기 ------------------------------------
   console.log('\n[2] 이 기기에서만 써 보기: 등록 → 사진 4장 → 진척 → 완독 → 리뷰 → 히스토리');
