@@ -4,6 +4,12 @@
 
 const BOOL_PROPS = new Set(['disabled', 'checked', 'hidden', 'required', 'readOnly', 'selected', 'open', 'multiple', 'autofocus']);
 
+/** 속성에 넣어도 되는 주소인지: 이 사이트 안의 주소(#…, 상대 경로), https, blob 만 받는다. */
+function safeURL(value) {
+  const v = String(value).replace(/[\u0000-\u0020]+/g, '');
+  return !/^[a-z][a-z0-9+.-]*:/i.test(v) || /^(https:|blob:)/i.test(v);
+}
+
 export function h(tag, props, ...kids) {
   const el = document.createElement(tag);
   if (props) {
@@ -17,6 +23,7 @@ export function h(tag, props, ...kids) {
       else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
       else if (BOOL_PROPS.has(k)) el[k] = Boolean(v);
       else if (k === 'for') el.htmlFor = v;
+      else if ((k === 'href' || k === 'src') && !safeURL(v)) continue;      // 정해 둔 종류의 주소가 아니면 넣지 않는다
       else el.setAttribute(k, v === true ? '' : String(v));
     }
   }
@@ -229,6 +236,7 @@ export function actionSheet({ title, items, note = '' }) {
 export function toast(message, { duration = 2800, id = '', actionLabel, onAction } = {}) {
   roots();
   if (id) for (const old of toastRoot.querySelectorAll(`[data-id="${CSS.escape(id)}"]`)) old.remove();
+  for (const old of [...toastRoot.children]) if (old.firstChild && old.firstChild.textContent === String(message)) old.remove();   // 같은 글을 겹쳐 띄우지 않는다
   const el = h('div', { class: 'toast', dataset: id ? { id } : undefined }, h('span', null, message),
     actionLabel ? h('button', { type: 'button', onclick: () => { el.remove(); onAction(); } }, actionLabel) : null);
   toastRoot.append(el);
@@ -255,11 +263,25 @@ export function autoGrow(textarea) {
   return fit;
 }
 
-/** 받침에 따라 조사를 고른다. josa('사피엔스', '은', '는') → '는' */
+/**
+ * 받침에 따라 조사를 고른다. josa('사피엔스', '은', '는') → '는', josa('40', '으로', '로') → '으로'
+ *   · 끝에 붙은 괄호·문장부호는 건너뛰고 그 앞 글자를 본다: '총, 균, 쇠 (상)' → '상'
+ *   · '(으)로'는 ㄹ 받침 뒤에서 '로'다: '서울로', '7로'
+ *   · 읽는 법을 알 수 없는 글자(로마자 등)로 끝나면 두 가지를 함께 적는다: 'Zero to One을(를)'
+ */
 export function josa(word, withFinal, withoutFinal) {
-  const ch = String(word).trim().slice(-1);
-  const code = ch.charCodeAt(0);
-  if (code >= 0xac00 && code <= 0xd7a3) return (code - 0xac00) % 28 ? withFinal : withoutFinal;
-  if (/[0-9]/.test(ch)) return '013678'.includes(ch) ? withFinal : withoutFinal;
-  return withoutFinal;
+  const text = String(word).replace(/[\s\p{P}\p{S}]+$/u, '');
+  const ch = text.slice(-1);
+  const code = ch ? ch.charCodeAt(0) : NaN;
+  const ro = withFinal === '으로';
+  if (code >= 0xac00 && code <= 0xd7a3) {
+    const jong = (code - 0xac00) % 28;
+    if (!jong) return withoutFinal;
+    return ro && jong === 8 ? withoutFinal : withFinal;
+  }
+  if (/[0-9]/.test(ch)) {                 // 숫자는 읽는 소리로: 영 일 이 삼 사 오 육 칠 팔 구
+    if (ro) return '036'.includes(ch) ? withFinal : withoutFinal;
+    return '013678'.includes(ch) ? withFinal : withoutFinal;
+  }
+  return ro ? '(으)로' : `${withFinal}(${withoutFinal})`;
 }

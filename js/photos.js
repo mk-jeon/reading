@@ -5,7 +5,7 @@ import { photoStore } from './db.js';
 import { PHOTO_MAX_EDGE, PHOTO_TARGET_BYTES } from './config.js';
 import { h } from './dom.js';
 import { rawPhotoURL } from './sync.js';
-import { setPhotoMeta } from './store.js';
+import { getBook, photoKey, setPhotoMeta } from './store.js';
 
 /** 카메라(camera=true) 또는 사진 보관함에서 한 장을 받는다. 취소하면 null. */
 export function pickImage({ camera }) {
@@ -75,16 +75,22 @@ export async function compressImage(file) {
   return best;
 }
 
-const urls = new Map();     // "<bookId>/<slot>" → { v, url }
+const urls = new Map();     // 사진 키 → { v, url }
 
 export async function savePhoto(bookId, slot, file) {
   const { blob, width, height } = await compressImage(file);
-  const key = `${bookId}/${slot}`;
-  const v = Date.now();
+  const key = photoKey(bookId, slot);
+  // 판(v)은 찍은 시각이다. 다만 앞선 판보다는 반드시 크게 잡는다(기기 시계가 늦어도 새로 찍은 쪽이 이기게).
+  const book = getBook(bookId);
+  const prev = book && book.photos[slot] ? book.photos[slot].v : 0;
+  const v = Math.max(Date.now(), prev + 1);
   await photoStore.set(key, { v, blob });
   const old = urls.get(key);
   if (old) { URL.revokeObjectURL(old.url); urls.delete(key); }
-  await setPhotoMeta(bookId, slot, { v, w: width, h: height, bytes: blob.size, remote: false });
+  if (!(await setPhotoMeta(bookId, slot, { v, w: width, h: height, bytes: blob.size, remote: false }))) {
+    await photoStore.del(key).catch(() => {});
+    throw new Error('사진을 넣을 책을 찾지 못했습니다.');
+  }
   return blob.size;
 }
 
@@ -92,12 +98,12 @@ export async function savePhoto(bookId, slot, file) {
 export async function photoURL(book, slot) {
   const meta = book.photos && book.photos[slot];
   if (!meta) return null;
-  const key = `${book.id}/${slot}`;
+  const key = photoKey(book.id, slot);
   const cached = urls.get(key);
   if (cached && cached.v === meta.v) return cached.url;
-  const rec = await photoStore.get(key);
-  // 다른 기기에서 다시 찍어 올린 사진이면(v가 다르면) 이 기기의 옛 사본 대신 저장소 것을 쓴다.
-  if (rec && rec.blob && (rec.v === meta.v || !meta.remote)) {
+  const rec = await photoStore.get(key).catch(() => null);
+  // 기록이 가리키는 판과 같은 사본만 쓴다. 다른 기기에서 다시 찍었으면(판이 다르면) 저장소 것을 쓴다.
+  if (rec && rec.blob && rec.v === meta.v) {
     if (cached) URL.revokeObjectURL(cached.url);
     const url = URL.createObjectURL(rec.blob);
     urls.set(key, { v: meta.v, url });

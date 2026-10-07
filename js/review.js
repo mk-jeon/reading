@@ -3,9 +3,11 @@
 //
 // 한 블록은 한 줄짜리 입력칸(textarea)이다. 한글 입력기와 부딪히지 않도록,
 // 줄바꿈·단축 입력은 키 이벤트가 아니라 입력이 끝난 값(input 이벤트)에서 처리한다.
+// 블록을 나누거나 종류를 바꾸는 일은 한 박자 뒤에(setTimeout 0) 한다. 화면 키보드가 여러 줄을
+// 여러 번에 나눠 넣는 동안 입력칸을 바꿔 끼우면, 나머지 글이 사라지거나 겹쳐 들어간다.
 
-import { actionSheet, autoGrow, fmtDate, h, icon, layersSettled, openModal } from './dom.js';
-import { canEdit, emit, getBook, now, saveReview, uid } from './store.js';
+import { actionSheet, autoGrow, fmtDate, h, icon, layersSettled, openModal, toast } from './dom.js';
+import { canEdit, emit, getBook, MAX_BLOCKS, now, saveReview, uid } from './store.js';
 
 const TYPES = [
   { key: 'p', label: '텍스트', hint: '' },
@@ -30,7 +32,9 @@ const TONES = [
 const PLACEHOLDER = { p: '글을 쓰거나 / 로 블록을 고릅니다', h1: '제목 1', h2: '제목 2', h3: '제목 3', bullet: '목록', number: '목록', todo: '할 일', quote: '인용', callout: '강조할 말', toggle: '토글 제목' };
 const LISTY = new Set(['bullet', 'number', 'todo']);
 const HEADING = new Set(['h1', 'h2', 'h3']);
-const SHORTCUT = { '#': 'h1', '##': 'h2', '###': 'h3', '-': 'bullet', '*': 'bullet', '1.': 'number', '>': 'quote' };
+const SHORTCUT = { '#': 'h1', '##': 'h2', '###': 'h3', '-': 'bullet', '*': 'bullet', '>': 'quote' };
+const MARKER = /^(#{1,3}|[-*]|\d{1,3}\.|\[ ?\]|>) /;          // 줄 맨 앞의 단축 입력
+const LIST_MARKER = /^(?:[-*]|\d{1,3}\.|\[ ?\]) /;                // 붙여 넣은 목록의 둘째 줄부터 떼어 낼 표시
 const toneOf = (key) => TONES.find((t) => t.key === key) || TONES[0];
 const typeLabel = (key) => (TYPES.find((t) => t.key === key) || TYPES[0]).label;
 
@@ -96,7 +100,9 @@ function readBlocks(blocks, onTodo) {
       }
       if (b.type === 'todo') {
         const li = h('li', { class: b.checked ? 'done' : null });
-        li.append(h('input', { type: 'checkbox', checked: b.checked, disabled: !onTodo, 'aria-label': b.text, onchange: (e) => { li.classList.toggle('done', e.target.checked); onTodo(b, e.target.checked); } }), h('span', null, inline(b.text)));
+        li.append(
+          h('label', { class: 'todo-hit' }, h('input', { type: 'checkbox', checked: b.checked, disabled: !onTodo, 'aria-label': b.text, onchange: (e) => { li.classList.toggle('done', e.target.checked); onTodo(b, e.target.checked); } })),
+          h('span', null, inline(b.text)));
         list.append(li);
       } else {
         list.append(h('li', null, inline(b.text)));
@@ -142,10 +148,16 @@ function blockEditor(review, touched) {
     try { ta.setSelectionRange(n, n); } catch { /* 선택 범위를 못 잡는 입력칸 */ }
   };
 
+  const atLimit = () => {
+    if (blocks.length < MAX_BLOCKS) return false;
+    toast(`블록은 ${MAX_BLOCKS}개까지 쓸 수 있습니다.`, { id: 'blocks' });
+    return true;
+  };
+
   const paint = (focusId, pos) => {
     let n = 0;
     wrap.replaceChildren(...blocks.map((b) => { n = b.type === 'number' ? n + 1 : 0; return row(b, n); }),
-      h('button', { class: 'nb-add', type: 'button', onclick: () => { const nb = { id: uid('k'), type: 'p', text: '' }; blocks.push(nb); paint(nb.id); touched(); } }, icon('plus', 16), '블록 추가'));
+      h('button', { class: 'nb-add', type: 'button', onclick: () => { if (atLimit()) return; const nb = { id: uid('k'), type: 'p', text: '' }; blocks.push(nb); paint(nb.id); touched(); } }, icon('plus', 16), '블록 추가'));
     if (focusId) focusBlock(focusId, pos);
   };
 
@@ -183,7 +195,7 @@ function blockEditor(review, touched) {
         b.type === 'callout' ? { label: '색 바꾸기', onSelect: async () => { await layersSettled(); toneMenu(b); } } : null,
         i > 0 ? { label: '위로 옮기기', icon: 'arrow-up', onSelect: () => { blocks.splice(i - 1, 0, blocks.splice(i, 1)[0]); paint(b.id); touched(); } } : null,
         i < blocks.length - 1 ? { label: '아래로 옮기기', icon: 'arrow-down', onSelect: () => { blocks.splice(i + 1, 0, blocks.splice(i, 1)[0]); paint(b.id); touched(); } } : null,
-        { label: '아래에 블록 추가', icon: 'plus', onSelect: () => { const nb = { id: uid('k'), type: 'p', text: '' }; blocks.splice(i + 1, 0, nb); paint(nb.id); touched(); } },
+        { label: '아래에 블록 추가', icon: 'plus', onSelect: () => { if (atLimit()) return; const nb = { id: uid('k'), type: 'p', text: '' }; blocks.splice(i + 1, 0, nb); paint(nb.id); touched(); } },
         { label: '블록 지우기', icon: 'trash', danger: true, onSelect: () => {
           blocks.splice(i, 1);
           if (!blocks.length) blocks.push({ id: uid('k'), type: 'p', text: '' });
@@ -209,45 +221,75 @@ function blockEditor(review, touched) {
     return true;
   };
 
-  const onInput = (b, ta, composing) => {
-    const v = ta.value;
-    if (composing) { b.text = v; touched(); return; }
+  const pending = new Set();               // 정리(settle)를 예약해 둔 블록 id
 
-    if (v.includes('\n')) {                               // 줄바꿈 → 블록 나누기
-      const parts = v.split('\n');
-      const i = indexOf(b.id);
-      const listy = LISTY.has(b.type);
-      if (listy && parts.every((t) => t === '')) { convert(b, 'p'); focusBlock(b.id, 'start'); return; }   // 빈 목록에서 Enter: 목록 끝
-      b.text = parts[0];
-      const rest = parts.slice(1).map((t) => ({ id: uid('k'), type: listy ? b.type : 'p', text: t, ...(b.type === 'todo' ? { checked: false } : {}) }));
-      blocks.splice(i + 1, 0, ...rest);
-      paint(rest[rest.length - 1].id, parts.length === 2 ? 'start' : 'end');
-      touched();
+  /** 입력이 가라앉은 뒤에 한 번: 단축 입력을 블록 종류로 바꾸고, 줄바꿈이 있으면 블록을 나눈다. */
+  const settle = (b, ta) => {
+    pending.delete(b.id);
+    if (!ta.isConnected) return;
+    const i = indexOf(b.id);
+    if (i < 0) return;
+    const v = ta.value;
+    const fromEnd = v.length - ta.selectionStart;          // 커서가 글의 끝에서 얼마나 떨어져 있는지
+
+    if (b.type === 'p' && v === '---') {
+      b.type = 'divider'; b.text = '';
+      if (i === blocks.length - 1) blocks.push({ id: uid('k'), type: 'p', text: '' });
+      paint(blocks[i + 1].id, 'start'); touched(); return;
+    }
+    if (b.type === 'p' && v === '/') { b.text = ''; ta.value = ''; typeMenu(b); touched(); return; }
+
+    let lines = v.split('\n');
+    let retyped = false;
+    if (b.type === 'p') {
+      const m = lines[0].match(MARKER);
+      if (m) {
+        b.type = SHORTCUT[m[1]] || (/^\d/.test(m[1]) ? 'number' : 'todo');
+        if (b.type === 'todo') b.checked = false;
+        lines[0] = lines[0].slice(m[0].length);
+        retyped = true;
+      }
+    }
+    if (lines.length === 1) {
+      b.text = lines[0];
+      if (retyped) { paint(b.id, Math.max(0, lines[0].length - fromEnd)); touched(); }
       return;
     }
 
-    if (b.type === 'p') {                                  // 단축 입력
-      if (v === '---') {
-        b.type = 'divider'; b.text = '';
-        const i = indexOf(b.id);
-        if (i === blocks.length - 1) blocks.push({ id: uid('k'), type: 'p', text: '' });
-        paint(blocks[i + 1].id, 'start'); touched(); return;
-      }
-      if (v === '/') { b.text = ''; ta.value = ''; typeMenu(b); touched(); return; }
-      const m = v.match(/^(#{1,3}|[-*]|1\.|\[ ?\]|>) ([\s\S]*)$/);
-      if (m) {
-        const caret = Math.max(0, ta.selectionStart - (m[1].length + 1));
-        b.text = m[2];
-        b.type = SHORTCUT[m[1]] || 'todo';
-        if (b.type === 'todo') b.checked = false;
-        paint(b.id, caret);
-        touched();
-        return;
-      }
+    // 줄바꿈 → 블록 나누기
+    const listy = LISTY.has(b.type);
+    if (listy && lines.every((t) => t === '')) { convert(b, 'p'); focusBlock(b.id, 'start'); return; }   // 빈 목록에서 Enter: 목록 끝
+    const room = MAX_BLOCKS - blocks.length;
+    if (room < lines.length - 1) {                                       // 블록 수 한도: 넘치는 줄은 마지막 블록에 이어 붙인다
+      toast(`블록은 ${MAX_BLOCKS}개까지 쓸 수 있습니다.`, { id: 'blocks' });
+      lines = room <= 0 ? [lines.join(' ')] : [...lines.slice(0, room), lines.slice(room).join(' ')];
     }
+    b.text = lines[0];
+    if (lines.length === 1) { paint(b.id, 'end'); touched(); return; }
+    // 새로 생기는 줄: 목록 안에서는 같은 목록으로 잇고(붙여 넣은 줄의 목록 표시는 뗀다),
+    // 그 밖에서는 줄 맨 앞의 단축 입력을 그 줄의 블록 종류로 삼는다(Enter 바로 뒤에 빠르게 친 "2. " 같은 것).
+    const rest = lines.slice(1).map((t) => {
+      if (listy) return { id: uid('k'), type: b.type, text: t.replace(LIST_MARKER, ''), ...(b.type === 'todo' ? { checked: false } : {}) };
+      const m = t.match(MARKER);
+      if (!m) return { id: uid('k'), type: 'p', text: t };
+      const type = SHORTCUT[m[1]] || (/^\d/.test(m[1]) ? 'number' : 'todo');
+      return { id: uid('k'), type, text: t.slice(m[0].length), ...(type === 'todo' ? { checked: false } : {}) };
+    });
+    blocks.splice(i + 1, 0, ...rest);
+    const last = rest[rest.length - 1];
+    paint(last.id, Math.max(0, last.text.length - fromEnd));
+    touched();
+  };
+
+  const onInput = (b, ta, composing) => {
+    if (!ta.isConnected) return;           // 다시 그리기 전의 입력칸에서 늦게 온 이벤트는 버린다
+    const v = ta.value;
     b.text = v;
     if (b.seed) delete b.seed;
     touched();
+    if (composing) return;
+    const structural = v.includes('\n') || (b.type === 'p' && (v === '---' || v === '/' || MARKER.test(v)));
+    if (structural && !pending.has(b.id)) { pending.add(b.id); setTimeout(() => settle(b, ta), 0); }
   };
 
   const onKey = (b, ta, e) => {
@@ -272,7 +314,7 @@ function blockEditor(review, touched) {
 
     if (b.type === 'bullet') el.append(h('span', { class: 'nb-mark', 'aria-hidden': 'true' }, '•'));
     if (b.type === 'number') el.append(h('span', { class: 'nb-mark tnum', 'aria-hidden': 'true' }, `${number}.`));
-    if (b.type === 'todo') el.append(h('input', { class: 'nb-check', type: 'checkbox', checked: Boolean(b.checked), 'aria-label': '끝냄', onchange: (e) => { b.checked = e.target.checked; el.classList.toggle('is-done', b.checked); touched(); } }));
+    if (b.type === 'todo') el.append(h('label', { class: 'nb-hit' }, h('input', { class: 'nb-check', type: 'checkbox', checked: Boolean(b.checked), 'aria-label': '끝냄', onchange: (e) => { b.checked = e.target.checked; el.classList.toggle('is-done', b.checked); touched(); } })));
     if (b.type === 'callout') el.append(h('button', { class: 'nb-tone', type: 'button', 'aria-label': `콜아웃 색: ${toneOf(b.tone).label}`, onclick: () => toneMenu(b) }, icon(toneOf(b.tone).icon, 18)));
 
     const ta = h('textarea', { class: 'nb-text', rows: '1', 'data-main': '', maxlength: '4000', placeholder: b.ph || PLACEHOLDER[b.type] || '', 'aria-label': typeLabel(b.type), autocapitalize: 'off' });
@@ -322,7 +364,7 @@ function propsEditor(review, touched) {
     rowOf('한 줄', text('rv-line', p.oneLine, (v) => { p.oneLine = v; }, '이 책을 한 문장으로', true), 'rv-line'),
     rowOf('읽기 전', text('rv-before', p.before, (v) => { p.before = v; }, '읽기 전에 하던 생각', true), 'rv-before'),
     rowOf('읽은 뒤', text('rv-after', p.after, (v) => { p.after = v; }, '지금 하는 생각', true), 'rv-after'),
-    rowOf('키워드', text('rv-tags', (p.tags || []).join(', '), (v) => { p.tags = v.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 8); }, '쉼표로 나눠 적습니다'), 'rv-tags'));
+    rowOf('키워드', text('rv-tags', (p.tags || []).join(', '), (v) => { p.tags = v.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 8); }, '쉼표로 나눠 적습니다 (8개까지)'), 'rv-tags'));
 }
 
 function propsView(review) {
@@ -384,7 +426,8 @@ export function openReview(bookId, { edit = false } = {}) {
     } else {
       const body = readBlocks(review.blocks, canEdit() ? (b, checked) => { b.checked = checked; touched(); } : null);
       const props = propsView(review);
-      doc.replaceChildren(...header(), props, ...(body.length || props ? body : [h('p', { class: 'ndoc-empty' }, canEdit() ? '아직 쓴 것이 없습니다. 편집을 눌러 시작하세요.' : '아직 쓴 것이 없습니다.')]));
+      const empty = h('p', { class: 'ndoc-empty' }, canEdit() ? '아직 쓴 것이 없습니다. 편집을 눌러 시작하세요.' : '아직 쓴 것이 없습니다.');
+      doc.replaceChildren(...[...header(), props, ...(body.length || props ? body : [empty])].filter(Boolean));
     }
   };
   toggle.addEventListener('click', async () => {
@@ -394,13 +437,23 @@ export function openReview(bookId, { edit = false } = {}) {
     doc.scrollIntoView({ block: 'start' });
   });
 
+  // 쓰던 글이 0.9초의 틈에 사라지지 않게, 화면이 가려지거나 닫히는 순간에도 저장한다.
+  const flush = () => { if (dirty) save(); };
+  const onHide = () => { if (document.visibilityState === 'hidden') flush(); };
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', onHide);
+
   openModal({
     title: '리뷰',
     page: true,
     cls: 'dialog--doc',
     content: doc,
     headExtra: canEdit() ? h('div', { class: 'dialog-tools' }, status, toggle) : null,
-    onClose: () => { save().then(() => emit('lib', { reason: 'review' })); },
+    onClose: () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onHide);
+      save().then(() => emit('lib', { reason: 'review' }));
+    },
   });
   paint();
 }

@@ -1,6 +1,6 @@
 // app.js — 시작점. 틀(상단 바·탭 바)을 짓고, 주소(#/me, #/reading, #/reading/b/<id>, #/history)에 맞는 화면을 그린다.
 
-import { APP_NAME } from './config.js';
+import { APP_NAME, LS } from './config.js';
 import { h, icon, toast } from './dom.js';
 import { renderHistory } from './history.js';
 import { renderMe } from './me.js';
@@ -43,7 +43,17 @@ function render() {
   stale = false;
   if (route.tab !== 'reading') leaveReading();
   main.dataset.view = route.tab;
-  VIEWS[route.tab](main, route, ctx);
+  try {
+    VIEWS[route.tab](main, route, ctx);
+  } catch {
+    // 기록의 어느 값이 어긋나 화면을 그리지 못해도, 빈 화면으로 두지 않는다.
+    leaveReading();
+    main.replaceChildren(h('div', { class: 'empty' },
+      h('p', { class: 'empty-title' }, '이 화면을 그리지 못했습니다'),
+      h('p', null, '기록의 일부가 어긋나 있을 수 있습니다. 다른 탭은 그대로 쓸 수 있습니다.'),
+      h('button', { class: 'btn btn--sm', type: 'button', onclick: () => location.reload() }, '새로 고침')));
+  }
+  paintChip();
   for (const a of tabLinks) {
     const on = a.dataset.tab === route.tab;
     a.classList.toggle('is-active', on);
@@ -61,9 +71,13 @@ function paintChip() {
     text = { saved: '저장됨', idle: '연결됨', syncing: '올리는 중', pending: '저장 대기', offline: '오프라인', error: '저장 오류' }[s.status] || '연결됨';
     cls = s.status === 'error' ? 'chip chip--bad' : (s.status === 'pending' || s.status === 'offline') ? 'chip chip--wait' : s.status === 'syncing' ? 'chip' : 'chip chip--ok';
   }
-  chip.className = cls;
-  chip.textContent = text;
-  chip.setAttribute('aria-label', `저장 상태: ${text}. 설정 열기`);
+  // 상단 바의 표지와, 접은 화면의 책 화면에 놓인 표지(.js-sync-chip)를 함께 고친다.
+  for (const el of [chip, ...document.querySelectorAll('.js-sync-chip')]) {
+    if (!el) continue;
+    el.className = el === chip ? cls : `${cls} js-sync-chip`;
+    el.textContent = text;
+    el.setAttribute('aria-label', `저장 상태: ${text}. 설정 열기`);
+  }
 }
 
 const typing = () => main.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
@@ -115,9 +129,6 @@ async function start() {
   initInstall();
   await boot();
   shell();
-  route = parseRoute();
-  render();
-  paintChip();
 
   subscribe((type, detail) => {
     if (type === 'sync' || type === 'mode') paintChip();
@@ -127,8 +138,15 @@ async function start() {
     if (typing() && (detail.reason === 'sync' || detail.reason === 'viewer')) { stale = true; return; }
     render();
   });
-  window.addEventListener('hashchange', onRoute);
+  // 맞추기(또는 공개된 기록 받기)를 먼저 걸어 두고 그린다. 책 주소로 바로 들어온 구경꾼에게
+  // 기록을 받기 전부터 "없는 책"이라고 말하지 않으려는 것이다.
   initSync();
+  route = parseRoute();
+  render();
+
+  window.addEventListener('hashchange', onRoute);
+  // 다른 창에서 연결하거나 끊으면(토큰·모드가 바뀌면) 이 창도 그 상태로 다시 연다.
+  window.addEventListener('storage', (e) => { if (e.key === LS.token || e.key === LS.mode) location.reload(); });
   storageReady().then((ok) => {
     if (!ok && canEdit()) toast('이 브라우저에서는 기기 보관함을 쓸 수 없습니다. 창을 닫으면 올리지 않은 기록이 사라집니다.', { id: 'warn', duration: 8000 });
   });

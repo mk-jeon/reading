@@ -1,8 +1,9 @@
 // db.js — 이 기기의 보관함(IndexedDB). 기록의 정본은 저장소이고, 여기는 사본과 대기열이다.
-//   kv     : 기록 사본(lib), 동기화 메모(meta)
-//   photos : 찍은 사진 원본(Blob). 키는 "<bookId>/<slot>"
+//   kv     : 기록 사본(lib · lib-local · viewer-cache), 써 보기의 출발 시각(local-base), 저장소에서 지울 사진 목록(pending-deletes)
+//   photos : 줄인 사진(Blob). 키는 "<bookId>/<slot>", 써 보기 모드의 것은 "local:<bookId>/<slot>"
 
-const DB_NAME = 'dogam';
+import { DB_NAME } from './config.js';
+
 const DB_VERSION = 1;
 let dbPromise = null;
 const memory = { kv: new Map(), photos: new Map() };   // IndexedDB를 못 쓰는 환경용

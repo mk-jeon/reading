@@ -49,7 +49,7 @@
   /* 리뷰 문서(노션식 블록). 값의 출처: heyman333/agent-notion-template-docs (MIT)의 template.html */
   --n-bg: #FFFFFF;
   --n-text: #2C2C2B;
-  --n-soft: #7D7A75;
+  --n-soft: #706D68;
   --n-divider: rgba(28, 19, 1, 0.11);
   --n-co-gray: #F9F8F7;
   --n-co-blue: #E5F2FC;
@@ -57,7 +57,7 @@
   --n-co-yellow: #F9F3DC;
   --n-co-red: #FCE9E7;
   --n-check: #2783DE;
-  --n-code: #CF5148;
+  --n-code: #BC4037;
   --n-code-bg: rgba(33, 27, 23, 0.05);
 
   /* 글자 */
@@ -140,7 +140,7 @@
     --n-co-yellow: #504425;
     --n-co-red: #502C29;
     --n-check: #2783DE;
-    --n-code: #CF5148;
+    --n-code: #E5746B;
     --n-code-bg: rgba(255, 255, 255, 0.055);
   }
 }
@@ -173,6 +173,6 @@
   --n-co-yellow: #504425;
   --n-co-red: #502C29;
   --n-check: #2783DE;
-  --n-code: #CF5148;
+  --n-code: #E5746B;
   --n-code-bg: rgba(255, 255, 255, 0.055);
 }

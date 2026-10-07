@@ -3,7 +3,7 @@
 import { APP_NAME, APP_VERSION, CLAUDE_MODEL, DATA_BRANCH, LS, lsGet, lsSet, repoInfo } from './config.js';
 import { confirmDialog, fmtDate, h, layersSettled, openModal, toast } from './dom.js';
 import { setMode, state, subscribe, wipeDevice } from './store.js';
-import { connect, disconnect, refreshViewer, scheduleSync, syncNow } from './sync.js';
+import { connect, disconnect, probeConnect, refreshViewer, scheduleSync, syncNow } from './sync.js';
 
 let installEvent = null;
 
@@ -14,8 +14,15 @@ export function initInstall() {
 
 export function applyTheme() {
   const theme = lsGet(LS.theme, 'system');
-  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
-  else delete document.documentElement.dataset.theme;
+  const root = document.documentElement;
+  if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
+  else delete root.dataset.theme;
+  // 브라우저 창의 테두리 색(theme-color)도 고른 화면에 맞춘다. 값은 tokens.css의 --bg에서 읽는다.
+  const forced = theme === 'light' || theme === 'dark' ? getComputedStyle(root).getPropertyValue('--bg').trim() : '';
+  for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
+    if (!meta.dataset.base) meta.dataset.base = meta.content;
+    meta.content = forced || meta.dataset.base;
+  }
 }
 
 function seg(options, current, onPick) {
@@ -29,10 +36,13 @@ function tokenForm(repaint) {
   const input = h('input', { class: 'input', id: 'gh-token', type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: 'github_pat_…' });
   const err = h('p', { class: 'field-error', role: 'alert' });
   const btn = h('button', { class: 'btn btn--primary', type: 'submit' }, '연결');
+  const idle = () => { btn.disabled = false; btn.textContent = '연결'; };
+  input.addEventListener('input', () => { err.textContent = ''; });
   return h('form', {
     class: 'form', novalidate: true,
     onsubmit: async (e) => {
       e.preventDefault();
+      if (btn.disabled) return;
       const token = input.value.trim();
       if (!token) { err.textContent = '토큰을 붙여 넣어 주세요.'; input.focus(); return; }
       if (!/^[A-Za-z0-9_]{20,255}$/.test(token)) { err.textContent = '토큰 모양이 아닙니다. github_pat_ 로 시작하는 글자 전체를 빈칸 없이 붙여 넣어 주세요.'; input.focus(); return; }
@@ -40,18 +50,31 @@ function tokenForm(repaint) {
       btn.textContent = '확인하는 중';
       err.textContent = '';
       try {
-        const ok = await connect(token);
-        toast(ok ? '저장소에 연결했습니다. 이제 여기서 적은 것이 저장소에 쌓입니다.' : '연결은 됐지만 첫 저장에 실패했습니다. 아래 상태를 확인해 주세요.');
+        // 써 보기 모드에서 적은 것은 진짜 기록에 섞지 않는다. 저장소에 기록이 아직 없을 때만, 첫 기록으로 삼을지 묻는다.
+        const probe = await probeConnect(token);
+        let adoptTrial = false;
+        if (!probe.remoteExists && probe.trialChanged) {
+          adoptTrial = await confirmDialog({
+            title: '써 본 기록이 있습니다',
+            message: '저장소에는 아직 기록이 없습니다. 이 기기에서 써 본 기록을 첫 기록으로 올릴까요? 새로 시작해도 써 본 기록은 이 기기에 남아 있습니다.',
+            confirmLabel: '써 본 기록으로 시작', cancelLabel: '새로 시작',
+          });
+          await layersSettled();
+        }
+        const out = await connect(token, { adoptTrial });
+        if (!out.ok) toast('연결했지만 첫 저장을 마치지 못했습니다.', { duration: 5000 });
+        else if (out.trial === 'adopted') toast('저장소에 연결했습니다. 써 본 기록을 첫 기록으로 올렸습니다.', { duration: 5000 });
+        else if (out.trial === 'kept') toast('저장소에 연결했습니다. 써 본 기록은 합치지 않았습니다. 연결을 끊으면 다시 볼 수 있습니다.', { duration: 6000 });
+        else toast('저장소에 연결했습니다. 이제 여기서 적은 것이 저장소에 쌓입니다.');
         repaint();
       } catch (ex) {
         err.textContent = ex.message || '연결하지 못했습니다.';
-        btn.disabled = false;
-        btn.textContent = '연결';
+        idle();
       }
     },
   },
   h('ol', { class: 'steps' },
-    h('li', null, 'GitHub에서 Fine-grained 토큰을 새로 만듭니다. ', h('a', { href: 'https://github.com/settings/personal-access-tokens/new', target: '_blank', rel: 'noopener' }, '토큰 만들기 화면 열기')),
+    h('li', null, 'GitHub에서 Fine-grained 토큰을 새로 만듭니다. ', h('a', { href: 'https://github.com/settings/personal-access-tokens/new', target: '_blank', rel: 'noopener noreferrer' }, '토큰 만들기 화면 열기')),
     h('li', null, `Repository access는 Only select repositories에서 ${repo} 하나만 고릅니다.`),
     h('li', null, 'Permissions의 Repository permissions에서 Contents를 Read and write로 둡니다.'),
     h('li', null, '만든 토큰을 아래에 붙여 넣습니다.')),
@@ -61,6 +84,28 @@ function tokenForm(repaint) {
     h('p', { class: 'field-help' }, '토큰은 이 기기에만 보관하고, GitHub로만 보냅니다. 기기마다 한 번씩 넣습니다.')),
   err,
   h('div', { class: 'set-row' }, btn));
+}
+
+function askDisconnect(repaint) {
+  const run = async (wipe, modal) => {
+    modal.close();
+    await layersSettled();
+    await disconnect({ wipe });
+    toast(wipe ? '연결을 끊고, 이 기기의 사본도 지웠습니다.' : '연결을 끊었습니다.');
+    repaint();
+    return false;
+  };
+  openModal({
+    title: '연결 끊기',
+    content: h('div', { class: 'form' },
+      h('p', null, '이 기기에서 토큰과 Claude 키를 지우고 구경 모드로 돌아갑니다. 저장소의 기록은 그대로입니다.'),
+      h('p', { class: 'note' }, '빌린 기기라면 사본도 함께 지우세요. 아직 저장소에 올리지 않은 기록과 「이 기기에만」 둔 사진은 사본을 지우면 사라집니다.')),
+    actions: [
+      { label: '취소', kind: 'quiet' },
+      { label: '끊기', onClick: (m) => run(false, m) },
+      { label: '끊고 사본도 지우기', kind: 'danger', onClick: (m) => run(true, m) },
+    ],
+  });
 }
 
 function syncGroup(repaint) {
@@ -78,23 +123,20 @@ function syncGroup(repaint) {
         h('button', { class: 'btn btn--sm', type: 'button', disabled: s.status === 'syncing', onclick: async (e) => {
           e.currentTarget.disabled = true;
           const ok = await syncNow();
-          toast(ok ? '저장소와 맞췄습니다.' : '맞추지 못했습니다. 상태를 확인해 주세요.');
+          toast(ok ? '저장소와 맞췄습니다.' : '맞추지 못했습니다.');
           repaint();
         } }, '지금 맞추기'),
-        h('button', { class: 'btn btn--sm btn--quiet', type: 'button', onclick: async () => {
-          const yes = await confirmDialog({ title: '연결 끊기', message: '이 기기에서 토큰과 Claude 키를 지우고 구경 모드로 돌아갑니다. 저장소의 기록은 그대로입니다.', confirmLabel: '끊기' });
-          if (yes) { await disconnect(); lsSet(LS.claudeKey, null); repaint(); }
-        } }, '연결 끊기')));
+        h('button', { class: 'btn btn--sm btn--quiet', type: 'button', onclick: () => askDisconnect(repaint) }, '연결 끊기')));
   }
   return h('section', { class: 'set-group' },
     h('h3', { class: 'set-title' }, '기록 모드'),
     h('p', { class: 'note' }, state.mode === 'local'
-      ? '지금은 이 기기에만 저장하고 있습니다. 저장소에 연결하면 여기서 적은 것이 그대로 올라가고, 다른 기기에서도 이어 쓸 수 있습니다.'
+      ? '지금은 써 보는 중입니다. 여기서 적는 것은 이 기기에만 남고, 저장소의 기록과 섞이지 않습니다. 저장소에 아직 기록이 없을 때만, 연결하면서 첫 기록으로 올릴 수 있습니다.'
       : '지금은 구경 모드입니다. 기록하려면 저장소에 쓸 수 있는 토큰이 필요합니다.'),
     tokenForm(repaint),
     h('div', { class: 'set-row' }, state.mode === 'local'
-      ? h('button', { class: 'btn btn--sm btn--quiet', type: 'button', onclick: async () => { await setMode('viewer'); await refreshViewer(); repaint(); } }, '구경 모드로 돌아가기')
-      : h('button', { class: 'btn btn--sm btn--quiet', type: 'button', onclick: async () => { await setMode('local'); toast('이 기기에서만 써 봅니다. 저장소로는 올라가지 않습니다.'); repaint(); } }, '토큰 없이 이 기기에서만 써 보기')));
+      ? h('button', { class: 'btn btn--sm btn--quiet', type: 'button', onclick: async () => { await setMode('viewer'); refreshViewer(); toast('구경 모드로 돌아왔습니다. 써 본 기록은 이 기기에 남아 있습니다.'); repaint(); } }, '구경 모드로 돌아가기')
+      : h('button', { class: 'btn btn--sm btn--quiet', type: 'button', onclick: async () => { await setMode('local'); toast('써 보는 중입니다. 여기서 적는 것은 저장소로 올라가지 않습니다.'); repaint(); } }, '토큰 없이 이 기기에서만 써 보기')));
 }
 
 function photoGroup(repaint) {
@@ -109,10 +151,18 @@ function photoGroup(repaint) {
 }
 
 function analyzeGroup(repaint) {
-  if (state.mode === 'viewer') return null;
   const has = Boolean(lsGet(LS.claudeKey));
+  const forget = () => h('button', { class: 'btn btn--sm btn--quiet', type: 'button', onclick: () => { lsSet(LS.claudeKey, null); toast('키를 지웠습니다.'); repaint(); } }, '키 지우기');
+  if (state.mode === 'viewer') {
+    // 구경 모드에서는 분석을 하지 않는다. 다만 이 기기에 키가 남아 있으면 지울 수 있게 보여 준다.
+    if (!has) return null;
+    return h('section', { class: 'set-group' },
+      h('h3', { class: 'set-title' }, '히스토리 분석'),
+      h('p', { class: 'note' }, '이 기기에 Claude API 키가 저장돼 있습니다.'),
+      h('div', { class: 'set-row' }, forget()));
+  }
   const key = h('input', { class: 'input', id: 'claude-key', type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: has ? '저장된 키가 있습니다' : 'sk-ant-…' });
-  const model = h('input', { class: 'input', id: 'claude-model', autocomplete: 'off', spellcheck: 'false' });
+  const model = h('input', { class: 'input', id: 'claude-model', autocomplete: 'off', spellcheck: 'false', maxlength: '80' });
   model.value = lsGet(LS.claudeModel) || CLAUDE_MODEL;
   return h('section', { class: 'set-group' },
     h('h3', { class: 'set-title' }, '히스토리 분석'),
@@ -131,7 +181,7 @@ function analyzeGroup(repaint) {
         toast('분석 설정을 저장했습니다.');
         repaint();
       } }, '저장'),
-      has ? h('button', { class: 'btn btn--sm btn--quiet', type: 'button', onclick: () => { lsSet(LS.claudeKey, null); toast('키를 지웠습니다.'); repaint(); } }, '키 지우기') : null));
+      has ? forget() : null));
 }
 
 function themeGroup(repaint) {
@@ -158,7 +208,7 @@ function installGroup(repaint) {
 function dataGroup(repaint, modal) {
   if (state.mode === 'viewer') return null;
   return h('section', { class: 'set-group' },
-    h('h3', { class: 'set-title' }, '이 기기의 사본'),
+    h('h3', { class: 'set-title' }, state.mode === 'local' ? '써 본 기록' : '이 기기의 사본'),
     h('div', { class: 'set-row' },
       h('button', { class: 'btn btn--sm', type: 'button', onclick: () => {
         const blob = new Blob([JSON.stringify(state.lib, null, 1)], { type: 'application/json' });
@@ -171,19 +221,19 @@ function dataGroup(repaint, modal) {
       } }, '기록 내려받기'),
       h('button', { class: 'btn btn--sm btn--danger', type: 'button', onclick: async () => {
         const yes = await confirmDialog({
-          title: '이 기기의 사본 지우기',
+          title: state.mode === 'owner' ? '이 기기의 사본 지우기' : '써 본 기록 지우기',
           message: state.mode === 'owner'
             ? '이 기기에 둔 기록 사본과 사진을 지웁니다. 저장소의 기록은 그대로이고, 다음에 맞출 때 다시 받아 옵니다. 아직 저장소에 올리지 않은 기록과 사진은 사라집니다.'
-            : '이 기기에만 있던 기록과 사진을 모두 지웁니다. 되돌릴 수 없습니다.',
+            : '이 기기에서 써 본 기록과 사진을 모두 지웁니다. 되돌릴 수 없습니다.',
           confirmLabel: '지우기', danger: true,
         });
         if (!yes) return;
         await wipeDevice();
         if (state.mode === 'owner') scheduleSync(300);
-        toast('이 기기의 사본을 지웠습니다.');
+        toast(state.mode === 'owner' ? '이 기기의 사본을 지웠습니다.' : '써 본 기록을 지웠습니다.');
         await layersSettled();
         modal.close();
-      } }, '사본 지우기')));
+      } }, state.mode === 'owner' ? '사본 지우기' : '써 본 기록 지우기')));
 }
 
 export function openSettings() {

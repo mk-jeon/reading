@@ -67,6 +67,8 @@
   background: var(--bg); border-bottom: 1px solid var(--line);
 }
 .detail-tags { display: flex; align-items: center; gap: var(--s-2); margin-right: auto; }
+.detail-miss { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-3); padding-top: var(--s-2); }
+.detail-miss .empty { align-self: stretch; }
 .detail-head { display: flex; flex-direction: column; gap: var(--s-2); }
 .detail-title { font-size: clamp(1.375rem, 5.6vw, 1.75rem); font-weight: 800; line-height: 1.3; letter-spacing: -0.03em; }
 .byline { display: flex; flex-wrap: wrap; gap: 0.125rem 0.625rem; font-size: var(--fs-14); line-height: 1.5; color: var(--ink-faint); }
@@ -153,7 +155,7 @@ button.plate:active .plate-frame { transform: scale(0.96); }
 .rcard.is-current { border-color: var(--accent); }
 .rcard-top { display: flex; gap: var(--s-3); min-width: 0; }
 .thumb {
-  flex: none; display: grid; place-items: center; width: 3rem; aspect-ratio: 3 / 4; overflow: hidden;
+  flex: none; align-self: flex-start; display: grid; place-items: center; width: 3rem; aspect-ratio: 3 / 4; overflow: hidden;
   border: 1px solid var(--line); border-radius: 6px; background: var(--surface-sunk); color: var(--ink-faint);
 }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
@@ -180,8 +182,9 @@ button.plate:active .plate-frame { transform: scale(0.96); }
 .srow.is-current .srow-title { color: var(--accent); }
 
 .insights { display: flex; flex-direction: column; gap: var(--s-2); }
-.insights li { position: relative; padding-left: 1rem; font-size: var(--fs-15); line-height: 1.62; color: var(--ink-soft); }
-.insights li::before { content: ""; position: absolute; left: 0; top: 0.78em; width: 0.375rem; height: 1.5px; background: var(--ink-faint); }
+.insights li { position: relative; padding-left: 1rem; font-size: var(--fs-15); line-height: 1.6; color: var(--ink-soft); }
+/* 줄 높이를 정수(24px)로 두고 줄표도 정수 자리에 놓아, 줄마다 굵기가 달라 보이지 않게 한다 */
+.insights li::before { content: ""; position: absolute; left: 0; top: calc(0.75rem - 1px); width: 0.375rem; height: 2px; border-radius: 1px; background: var(--ink-faint); }
 .memo { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
 .memo-by { font-size: var(--fs-12); font-weight: 700; color: var(--ink-faint); }
 
@@ -218,6 +221,8 @@ button.plate:active .plate-frame { transform: scale(0.96); }
 .tl-date { font-size: var(--fs-13); line-height: 1.75; color: var(--ink-faint); }
 .tl-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .tl-title { font-size: var(--fs-16); font-weight: 650; line-height: 1.5; letter-spacing: -0.015em; text-decoration: none; }
+a.tl-title { position: relative; }
+a.tl-title::after { content: ""; position: absolute; inset: -0.5rem 0; }       /* 누르는 자리 40px */
 .tl-row--start .tl-title { font-weight: 500; color: var(--ink-soft); }
 .tl-line { font-size: var(--fs-15); line-height: 1.6; color: var(--ink-soft); }
 .tl-shift { font-size: var(--fs-15); font-weight: 600; line-height: 1.6; }
@@ -256,5 +261,6 @@ button.plate:active .plate-frame { transform: scale(0.96); }
   }
   .detail-bar { margin-inline: 0; padding-inline: 0; }
   .detail-back { display: none; }
+  .detail-bar .js-sync-chip { display: none; }      /* 펼친 화면에서는 상단 바의 표지가 보인다 */
   .detail-none { display: flex; }
 }

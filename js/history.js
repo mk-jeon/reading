@@ -48,7 +48,7 @@ function resultLine(r) {
   }
   if (r.error) return h('p', { class: 'hist-result is-bad' }, r.error);
   const parts = [];
-  if (r.added) parts.push(`새 리뷰 ${r.added}건을 읽어 연혁에 더했습니다.`);
+  if (r.added) parts.push(`새로 쓰거나 고친 리뷰 ${r.added}건을 읽어 연혁에 적었습니다.`);
   else parts.push('새로 읽을 리뷰가 없습니다.');
   if (r.skipped) parts.push(`이미 읽은 ${r.skipped}건은 다시 읽지 않았습니다.`);
   if (r.added) parts.push(r.engine === 'claude' ? 'Claude가 새 리뷰와 이전 요약만 받아 분석했습니다.' : '직접 쓴 한 줄과 읽기 전·후로 채웠습니다.');
@@ -100,6 +100,8 @@ export function renderHistory(root) {
   const rerender = () => { if (root.isConnected && root.dataset.view === 'history') renderHistory(root); };
   const rows = timeline(lib);
   const pending = pendingReviews(lib).length;
+  // 확인한 뒤에 리뷰를 새로 쓰거나 고쳤으면, 지난번 결과("새로 읽을 리뷰가 없습니다")는 더 이상 맞지 않는다.
+  if (lastResult && !lastResult.viewer && !lastResult.error && pending > 0) lastResult = null;
 
   const groups = [];
   for (const r of rows) {

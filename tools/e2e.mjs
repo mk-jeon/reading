@@ -65,7 +65,7 @@ const GOOD_TOKEN = 'github_pat_E2E0GOOD0TOKEN0000000000';
 const BAD_TOKEN = 'github_pat_E2E0BAD0TOKEN00000000000';
 
 function fakeGitHub() {
-  const repo = { branch: false, files: new Map(), blobs: new Map(), calls: [], n: 0, failNextPut: 0 };
+  const repo = { branch: false, files: new Map(), blobs: new Map(), calls: [], n: 0, failNextPut: 0, delayPhotoPut: 0, hangNext: 0 };
   const sha = () => { repo.n += 1; return `sha${String(repo.n).padStart(5, '0')}`; };
   const json = (route, status, body) => route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
 
@@ -76,6 +76,8 @@ function fakeGitHub() {
     if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } });
     const path = decodeURIComponent(url.pathname.replace('/repos/mk-jeon/reading', ''));
     repo.calls.push(`${method} ${path}`);
+    if (repo.hangNext > 0) { repo.hangNext -= 1; return new Promise(() => {}); }        // 답하지 않고 매달아 둔다
+    if (repo.delayPhotoPut && method === 'PUT' && path.startsWith('/contents/photos/')) await new Promise((r) => setTimeout(r, repo.delayPhotoPut));
     const auth = req.headers().authorization || '';
     if (auth && auth !== `Bearer ${GOOD_TOKEN}`) return json(route, 401, { message: 'Bad credentials' });
     const body = req.postData() ? JSON.parse(req.postData()) : null;
@@ -237,7 +239,7 @@ try {
   await addPhoto(p, '본문 첫 장', photos.first);
   check('사진 넉 장이 차면 읽기 시작이 열린다', !(await p.isDisabled('button:has-text("읽기 시작")')));
   const sizes = await p.evaluate(async () => {
-    const db = await new Promise((res) => { const r = indexedDB.open('dogam'); r.onsuccess = () => res(r.result); });
+    const db = await new Promise((res) => { const r = indexedDB.open('dogam-reading'); r.onsuccess = () => res(r.result); });
     const all = await new Promise((res) => { const r = db.transaction('photos').objectStore('photos').getAll(); r.onsuccess = () => res(r.result); });
     return all.map((x) => ({ bytes: x.blob.size, type: x.blob.type }));
   });
@@ -252,6 +254,7 @@ try {
   await p.click('button:has-text("기록")');
   await p.waitForSelector('.log');
   check('진척도가 18%로 계산된다 (120/636)', (await p.textContent('.prog-pct')) === '18%');
+  check('적고 나면 입력칸이 비워진다', (await p.inputValue('#log-page')) === '' && (await p.inputValue('#log-memo')) === '');
   check('다음 볼 차례가 p.121로 표시된다', (await p.textContent('.prog-nums')).includes('p.121'));
   await p.fill('#log-page', '700');
   await p.click('button:has-text("기록")');
@@ -269,6 +272,15 @@ try {
   await p.click('.dialog button:has-text("완독으로 옮기기")');
   await p.waitForSelector('.ndoc.is-editing');
   check('100%가 되면 완독을 묻고 리뷰 편집기가 열린다', true);
+  await p.click('.dialog-tools button:has-text("완료")');
+  await p.waitForSelector('.ndoc:not(.is-editing)');
+  const emptyDoc = await p.textContent('.ndoc');
+  check('아무것도 쓰지 않은 리뷰의 읽기 화면에 빈 값이 글자(null)로 찍히지 않는다', !emptyDoc.includes('null') && emptyDoc.includes('아직 쓴 것이 없습니다'), emptyDoc.slice(0, 80));
+  await p.click('.dialog-tools button:has-text("편집")');
+  await p.waitForSelector('.ndoc.is-editing');
+  const starBox = await p.locator('.star-btn').first().boundingBox();
+  const smallBtn = await p.locator('.dialog-tools .btn--sm').first().boundingBox();
+  check('별점 단추와 작은 단추의 누르는 자리가 40px 이상이다', starBox.width >= 40 && starBox.height >= 40 && smallBtn.height >= 40, `${starBox.width}x${starBox.height}, ${smallBtn.height}`);
   await p.click('button[aria-label="별점 4점"]');
   await p.fill('#rv-line', '역사는 사실의 목록이 아니라 믿음의 목록이다.');
   await p.fill('#rv-before', '역사는 사실을 쌓는 일이라고 생각했다');
@@ -277,10 +289,23 @@ try {
   const firstP = p.locator('.nb--p .nb-text').first();
   await firstP.click();
   await firstP.pressSequentially('- 큰 지도를 먼저 보고 싶었다');
-  check('「- 」로 시작하면 글머리 목록이 된다', (await p.locator('.nb--bullet').count()) === 1);
+  // 블록의 종류를 바꾸거나 나누는 일은 입력이 가라앉은 뒤 한 박자 늦게 일어난다. 그때까지 기다린다.
+  const blocksAre = (sel, n) => p.waitForFunction(([s, k]) => document.querySelectorAll(s).length === k, [sel, n], { timeout: 5000 }).then(() => true, () => false);
+  check('「- 」로 시작하면 글머리 목록이 된다', (await blocksAre('.nb--bullet', 1)) && (await p.locator('.nb--bullet .nb-text').inputValue()) === '큰 지도를 먼저 보고 싶었다');
   await p.keyboard.press('Enter');
   await p.keyboard.type('총균쇠와 맞세워 읽을 생각');
-  check('Enter로 블록이 나뉘고 목록이 이어진다', (await p.locator('.nb--bullet').count()) === 2);
+  check('Enter로 블록이 나뉘고 목록이 이어진다', (await blocksAre('.nb--bullet', 2)) && (await p.locator('.nb--bullet .nb-text').nth(1).inputValue()) === '총균쇠와 맞세워 읽을 생각');
+  await p.locator('.nb--bullet .nb-handle').nth(1).click();    // 둘째 글머리 아래에 블록을 하나 더한다
+  await p.click('.menu-item:has-text("아래에 블록 추가")');
+  const ime = await a.ctx.newCDPSession(p);
+  await ime.send('Input.insertText', { text: '첫 줄\n둘째 줄\n셋째 줄' });      // 화면 키보드의 붙여 넣기처럼, 한 번에 여러 줄
+  await p.waitForFunction(() => [...document.querySelectorAll('.nb .nb-text')].some((t) => t.value === '셋째 줄'), null, { timeout: 5000 }).catch(() => {});
+  await p.waitForTimeout(150);
+  const multi = await p.evaluate(() => [...document.querySelectorAll('.nb .nb-text')].map((t) => t.value).filter((v) => /^(첫|둘째|셋째) 줄$/.test(v)));
+  check('여러 줄을 한꺼번에 넣어도 줄마다 블록이 하나씩만 생긴다', JSON.stringify(multi) === JSON.stringify(['첫 줄', '둘째 줄', '셋째 줄']), JSON.stringify(multi));
+  await p.keyboard.press('Enter');
+  await p.keyboard.type('2. 번호 목록');
+  check('「2. 」처럼 1이 아닌 숫자로도 번호 목록이 시작된다', (await blocksAre('.nb--number', 1)) && (await p.locator('.nb--number .nb-text').inputValue()) === '번호 목록');
   await p.locator('.nb--quote .nb-text').fill('우리는 이야기를 믿는 동물이다');
   await p.locator('.nb--callout .nb-text').nth(0).fill('나는 허구가 협력의 조건이라고 생각한다');
   await p.locator('.nb--callout .nb-text').nth(1).fill('반론: 협력은 허구 이전에 친족과 호혜로도 설명된다');
@@ -303,7 +328,7 @@ try {
   check('확인하는 동안 책장 넘기는 표시가 나온다', true);
   await p.waitForSelector('.hist-result', { timeout: 8000 });
   const r1 = await p.textContent('.hist-result');
-  check('새 리뷰 1건만 읽어 연혁에 더한다', r1.includes('새 리뷰 1건'), r1);
+  check('새 리뷰 1건만 읽어 연혁에 더한다', r1.includes('리뷰 1건을 읽어'), r1);
   check('연혁에 한 줄과 읽기 전 → 읽은 뒤가 적힌다', (await p.textContent('.tl')).includes('믿음의 목록') && (await p.textContent('.tl-shift')).includes('→'));
   await shot(p, '07-cover-history');
   await p.click('button:has-text("새 리뷰 확인")');
@@ -321,8 +346,9 @@ try {
   const restBefore = fontHits.rest;
   await p.click('button:has-text("책 추가")');
   await p.fill('#title', '똠얌꿍 햏자');
-  await p.click('.dialog-foot button:has-text("대기에 넣기")');
+  await p.press('#title', 'Enter');
   await p.waitForSelector('.srow:has-text("똠얌꿍")');
+  check('책 추가 창의 입력칸에서 Enter를 눌러도 저장된다', (await p.locator('.dialog').count()) === 0);
   await until(() => fontHits.rest > restBefore, 8000);
   check('드문 한글 음절이 나올 때만 나머지 글꼴(rest)을 받는다', restBefore === 0 && fontHits.rest === 1 && (await p.evaluate(async () => { await document.fonts.ready; return document.fonts.check('16px "Pretendard Variable Rest"', '똠'); })), `전 ${restBefore}, 후 ${fontHits.rest}`);
 
@@ -347,6 +373,9 @@ try {
   check('틀린 토큰은 이유와 함께 거절된다', (await p.textContent('.settings')).includes('토큰이 틀렸거나'));
   await p.fill('#gh-token', GOOD_TOKEN);
   await p.click('.settings button[type="submit"]');
+  await p.waitForSelector('.dialog:has-text("써 본 기록이 있습니다")');
+  check('저장소에 기록이 없을 때만, 써 본 기록을 첫 기록으로 삼을지 묻는다', true);
+  await p.click('.dialog button:has-text("써 본 기록으로 시작")');
   await p.waitForFunction(() => document.querySelector('.topbar .chip').textContent === '저장됨', null, { timeout: 30000 });
   check('연결하면 상단 표지가 「저장됨」이 된다', true);
   check('기록 브랜치를 빈 뿌리에서 새로 만든다', gh.repo.calls.includes('POST /git/refs') && gh.repo.branch);
@@ -356,11 +385,11 @@ try {
   check('사진 넉 장이 판 번호가 붙은 이름으로 저장소에 올라가고 올린 표시가 남는다', ['front', 'back', 'toc', 'first'].every((k) => gh.repo.files.has(`photos/${sap.id}/${k}-${sap.photos[k].v}.jpg`) && sap.photos[k].remote === true));
   check('토큰은 기록 파일에도, 저장소의 어느 파일에도 들어가지 않는다', ![...gh.repo.files.values()].some((f) => Buffer.from(f.b64, 'base64').toString('utf8').includes(GOOD_TOKEN)));
   const stored = await p.evaluate(async () => {
-    const db = await new Promise((res) => { const r = indexedDB.open('dogam'); r.onsuccess = () => res(r.result); });
+    const db = await new Promise((res) => { const r = indexedDB.open('dogam-reading'); r.onsuccess = () => res(r.result); });
     const lib = await new Promise((res) => { const r = db.transaction('kv').objectStore('kv').getAll(); r.onsuccess = () => res(r.result); });
     return { ls: Object.keys(localStorage).sort(), idb: JSON.stringify(lib) };
   });
-  check('토큰은 이 기기의 localStorage 한 곳에만 있다', stored.ls.includes('dogam.ghToken') && !stored.idb.includes(GOOD_TOKEN), stored.ls.join(', '));
+  check('토큰은 이 기기의 localStorage 한 곳에만 있다', stored.ls.includes('dogam.reading.ghToken') && !stored.idb.includes(GOOD_TOKEN), stored.ls.join(', '));
   await p.click('.dialog button[aria-label="닫기"]');
 
   const b = await newDevice(browser, base, gh, { width: 700, height: 780 });
@@ -420,8 +449,9 @@ try {
   const [again] = await Promise.all([p.waitForEvent('filechooser'), p.click('.menu-item:has-text("사진에서 고르기")')]);
   await again.setFiles(photos.back);
   const newer = () => { const x = Object.values(gh.library().books).find((y) => y.title === '사피엔스'); return x && x.photos.front; };
-  await until(() => { const m = newer(); return m && m.v !== sap.photos.front.v && m.remote === true && gh.repo.files.has(`photos/${sap.id}/front-${m.v}.jpg`); });
-  check('다시 찍은 사진은 새 판 이름으로 올라간다', newer().v !== sap.photos.front.v && gh.repo.files.has(`photos/${sap.id}/front-${newer().v}.jpg`));
+  const oldFront = `photos/${sap.id}/front-${sap.photos.front.v}.jpg`;
+  await until(() => { const m = newer(); return m && m.v !== sap.photos.front.v && m.remote === true && gh.repo.files.has(`photos/${sap.id}/front-${m.v}.jpg`) && !gh.repo.files.has(oldFront); });
+  check('다시 찍은 사진은 새 판 이름으로 올라가고, 옛 판은 저장소에서 지워진다', newer().v > sap.photos.front.v && gh.repo.files.has(`photos/${sap.id}/front-${newer().v}.jpg`) && !gh.repo.files.has(oldFront));
 
   // 기록을 두 번 눌러도 한 줄만 적힌다
   await p.click('.detail-back');
@@ -435,8 +465,135 @@ try {
   await p.waitForTimeout(300);
   check('기록을 연달아 두 번 눌러도 한 줄만 적힌다', (await p.locator('.log').count()) === 1);
 
-  // 책을 지우면 저장소의 사진도 지운다
+  // 읽는 중인 책의 총 쪽수는 비울 수 없다
+  await p.click('button[aria-label="더 보기"]');
+  await p.click('.menu-item:has-text("책 정보 수정")');
+  await p.fill('#totalPages', '');
+  await p.click('.dialog-foot button:has-text("저장")');
+  check('읽는 중인 책의 총 쪽수는 비울 수 없다', (await p.textContent('.dialog .field-error')).includes('비울 수 없습니다'));
+  await p.click('.dialog-foot button:has-text("취소")');
+
+  // 끝까지 읽고 「아직」을 골랐을 때
+  await p.fill('#log-page', '340');
+  await p.click('button[type="submit"]:has-text("기록")');
+  await p.click('.dialog button:has-text("아직")');
+  await p.waitForSelector('.panel button:has-text("완독으로 옮기기")');
+  check('끝까지 읽고 「아직」을 골라도 완독으로 옮기는 단추가 남고, 끝까지 읽었다고 적는다', (await p.textContent('.prog-nums')).includes('끝까지 읽음'));
+  await p.fill('#log-page', '40');
+  await p.click('button[type="submit"]:has-text("기록")');
+  await p.waitForFunction(() => document.querySelector('.prog-pct') && document.querySelector('.prog-pct').textContent === '11%');
+  const backToast = await p.textContent('.toasts');
+  check('쪽수를 되돌려 적을 때 조사가 맞는다(p.40으로)', backToast.includes('p.40으로'), backToast);
+
+  // 쪽수를 마지막에 적고 한 번만 눌러도 올라간다
   await p.click('.detail-back');
+  await p.click('.srow:has-text("퇴사준비생의 런던")');
+  for (const [label, key] of [['앞표지', 'front'], ['뒤표지', 'back'], ['목차', 'toc'], ['본문 첫 장', 'first']]) await addPhoto(p, label, photos[key]);
+  await p.fill('#start-pages', '300');                          // change 이벤트 없이, 입력칸에 포커스가 있는 채로
+  check('쪽수를 치는 즉시 읽기 시작이 열린다', !(await p.isDisabled('button:has-text("읽기 시작")')));
+  await p.click('button:has-text("읽기 시작")');
+  await p.waitForSelector('.prog-pct');
+  check('쪽수를 마지막에 적고 한 번만 눌러도 읽는 중으로 올라간다', (await p.textContent('.detail-tags')).includes('No.'));
+
+  // 사진을 올리는 도중에 사본을 지워도, 저장소의 기록을 첫 상태로 덮어쓰지 않는다
+  const london = () => Object.values(gh.library().books).find((y) => y.title === '퇴사준비생의 런던');
+  await until(() => { const x = london(); return x && x.status === 'reading' && ['front', 'back', 'toc', 'first'].every((k) => x.photos[k] && x.photos[k].remote); });
+  const putCount = () => gh.repo.calls.filter((c) => c.startsWith('PUT /contents/photos/')).length;
+  const putsBefore = putCount();
+  gh.repo.delayPhotoPut = 2000;
+  await p.click('button.plate:has-text("뒤표지")');
+  await p.click('.dialog button:has-text("다시 찍기")');
+  const [fc] = await Promise.all([p.waitForEvent('filechooser'), p.click('.menu-item:has-text("사진에서 고르기")')]);
+  await fc.setFiles(photos.front);
+  await until(() => putCount() > putsBefore);                   // 올리기가 시작됐다(답은 2초 뒤에 온다)
+  await p.click('.detail-back');
+  await p.click('button[aria-label="설정"]');
+  await p.click('.settings button:has-text("사본 지우기")');
+  await p.click('.dialog-foot button:has-text("지우기")');
+  await p.waitForFunction(() => document.querySelector('.topbar .chip').textContent === '저장됨', null, { timeout: 30000 });
+  gh.repo.delayPhotoPut = 0;
+  await p.waitForTimeout(1200);
+  await p.waitForFunction(() => document.querySelector('.topbar .chip').textContent === '저장됨', null, { timeout: 30000 });
+  const tokyo = Object.values(gh.library().books).find((y) => y.title === '퇴사준비생의 도쿄');
+  check('사진을 올리는 도중에 사본을 지워도, 저장소의 기록이 첫 상태로 덮이지 않는다', london() && london().status === 'reading' && london().totalPages === 300 && tokyo && tokyo.status === 'reading' && tokyo.logs.length >= 3, JSON.stringify({ london: london() && london().status, tokyoLogs: tokyo && tokyo.logs.length }));
+  check('사본을 지운 기기는 저장소의 기록을 다시 받아 보여 준다', (await p.locator('.rcard').count()) === 2);
+
+  // 써 보기 모드에서 지우거나 고친 것은 진짜 기록에 섞이지 않는다
+  const t = await newDevice(browser, base, gh);
+  await t.page.click('button[aria-label="설정"]');
+  await t.page.click('text=토큰 없이 이 기기에서만 써 보기');
+  await t.page.click('.dialog button[aria-label="닫기"]');
+  await tab(t.page, '읽는 중');
+  await t.page.click('.srow:has-text("총균쇠")');
+  await t.page.click('button[aria-label="더 보기"]');
+  await t.page.click('.menu-item:has-text("책 지우기")');
+  await t.page.click('.dialog-foot button:has-text("지우기")');
+  await t.page.waitForFunction(() => ![...document.querySelectorAll('.srow-title')].some((e) => e.textContent === '총균쇠'));
+  await t.page.click('button[aria-label="설정"]');
+  await t.page.fill('#gh-token', GOOD_TOKEN);
+  await t.page.click('.settings button[type="submit"]');
+  await t.page.waitForFunction(() => document.querySelector('.topbar .chip').textContent === '저장됨', null, { timeout: 30000 });
+  const keptToast = await t.page.textContent('.toasts');
+  await t.page.click('.dialog button[aria-label="닫기"]');
+  const lib3 = gh.library();
+  check('써 보기 모드에서 지운 책은 진짜 기록에서 지워지지 않는다', Object.values(lib3.books).some((x) => x.title === '총균쇠') && !Object.keys(lib3.tombstones).includes('seed-ggs') && (await t.page.locator('.srow:has-text("총균쇠")').count()) === 1, keptToast);
+  check('써 본 기록을 합치지 않았다고 알린다', keptToast.includes('합치지 않았습니다'), keptToast);
+  check('써 보기 흐름(두 번째): 오류 없음', t.errors.length === 0, t.errors.join(' | '));
+  await t.ctx.close();
+
+  // 답이 없는 요청은 끊고, 스스로 다시 시도한다
+  gh.repo.hangNext = 1;
+  await p.click('button[aria-label="설정"]');
+  await p.click('.settings button:has-text("지금 맞추기")');
+  await p.waitForFunction(() => document.querySelector('.topbar .chip').textContent === '오프라인', null, { timeout: 45000 });
+  check('답이 없는 요청은 시간이 지나면 끊고, 다시 시도할 때를 알린다', (await p.textContent('.settings')).includes('뒤에 다시 시도합니다'));
+  await p.waitForFunction(() => document.querySelector('.topbar .chip').textContent === '저장됨', null, { timeout: 40000 });
+  check('끊긴 뒤에는 스스로 다시 시도해 맞춘다', true);
+  await p.click('.dialog button[aria-label="닫기"]');
+
+  // 저장소의 기록이 이 앱보다 새 형식이면 덮어쓰지 않고 멈춘다
+  const libFile = gh.repo.files.get('library.json');
+  const newerSchema = { ...gh.library(), schema: 99, fromTheFuture: true };
+  gh.repo.files.set('library.json', { sha: 'future-sha', b64: Buffer.from(JSON.stringify(newerSchema), 'utf8').toString('base64') });
+  await p.click('button[aria-label="설정"]');
+  await p.click('.settings button:has-text("지금 맞추기")');
+  await p.waitForSelector('.settings .field-error:has-text("새 형식")');
+  check('저장소의 기록이 이 앱보다 새 형식이면 덮어쓰지 않고 멈춘다', gh.library().fromTheFuture === true && gh.repo.files.get('library.json').sha === 'future-sha');
+  gh.repo.files.set('library.json', libFile);
+  await p.click('.settings button:has-text("지금 맞추기")');
+  await p.waitForFunction(() => document.querySelector('.topbar .chip').textContent === '저장됨', null, { timeout: 30000 });
+  await p.click('.dialog button[aria-label="닫기"]');
+
+  // 같은 기기에 창이 둘 열려 있을 때: 한 창에서 적은 것이 다른 창에 곧 보이고, 서로의 수정을 지우지 않는다
+  const p2 = await a.ctx.newPage();
+  await p2.goto(`${base}/#/reading`);
+  await p2.waitForSelector('.rcard');
+  await p.click('button:has-text("책 추가")');
+  await p.fill('#title', '첫 창에서 넣은 책');
+  await p.press('#title', 'Enter');
+  await p2.waitForSelector('.srow:has-text("첫 창에서 넣은 책")', { timeout: 8000 });
+  await p2.click('button:has-text("책 추가")');
+  await p2.fill('#title', '둘째 창에서 넣은 책');
+  await p2.press('#title', 'Enter');
+  await p.waitForSelector('.srow:has-text("둘째 창에서 넣은 책")', { timeout: 8000 });
+  await until(() => { const t = Object.values(gh.library().books).map((x) => x.title); return t.includes('첫 창에서 넣은 책') && t.includes('둘째 창에서 넣은 책'); });
+  const titles = Object.values(gh.library().books).map((x) => x.title);
+  check('창 두 개로 번갈아 적어도 서로의 수정이 지워지지 않는다', titles.includes('첫 창에서 넣은 책') && titles.includes('둘째 창에서 넣은 책'));
+  await p2.close();
+
+  // 책 주소로 바로 들어온 구경꾼
+  const deepId = Object.values(gh.library().books).find((x) => x.title.startsWith('똠얌꿍')).id;
+  const dctx = await browser.newContext({ viewport: { width: 384, height: 854 }, serviceWorkers: 'block', locale: 'ko-KR' });
+  await dctx.route('https://raw.githubusercontent.com/**', async (r) => { await new Promise((res) => setTimeout(res, 1200)); return gh.raw(r); });
+  const dp = await dctx.newPage();
+  await dp.goto(`${base}/#/reading/b/${deepId}`);
+  await dp.waitForSelector('.detail-miss');
+  const firstSeen = await dp.textContent('.detail-miss');
+  await dp.waitForSelector('.detail-title', { timeout: 8000 });
+  check('책 주소로 바로 들어오면 기록을 받는 동안 기다리고, 받은 뒤에 그 책을 보여 준다', firstSeen.includes('기록을 받는 중') && (await dp.textContent('.detail-title')).startsWith('똠얌꿍'), firstSeen);
+  await dctx.close();
+
+  // 책을 지우면 저장소의 사진도 지운다
   await p.click('.srow:has-text("사피엔스")');
   await p.click('button[aria-label="더 보기"]');
   await p.click('.menu-item:has-text("책 지우기")');
@@ -465,6 +622,7 @@ try {
         logs: [{ page: 10, memo: 12 }, 'x', { page: 'NaN' }],
         review: { props: { rating: 99, tags: 'no', oneLine: { a: 1 } }, blocks: [{ id: 'k1', type: 'script', text: 5 }, { id: 'k1', type: 'todo', text: 'x', checked: 'y' }, null, { type: 'callout', tone: 'pink', text: 'c' }] } },
       'ok-2': { title: '둘', status: 'reading', no: 2, startedAt: '2026-10-02T00:00:00Z' },
+      'ok-3': { title: '셋', status: 'reading', no: 7, startedAt: '1990-01-01T00:00:00Z', totalPages: 20000, page: 1 },      // 끝나는 날을 어림하면 날짜가 넘친다
       '../../etc': { title: '경로' }, '__proto__x': { title: '밑줄' }, 'a b': { title: '빈칸' }, bad: 'string',
     },
     tombstones: { '../x': '2026-01-01T00:00:00Z', gone: 'never' },
@@ -489,12 +647,57 @@ try {
       summary: lib.history.summary, insight: lib.insight.lines, stable: once === JSON.stringify(normalize(JSON.parse(once))),
     };
   });
-  check('모양이 어긋난 id의 책은 받아들이지 않는다', JSON.stringify(shape.ids) === JSON.stringify(['ok-1', 'ok-2']), shape.ids.join(', '));
+  check('모양이 어긋난 id의 책은 받아들이지 않는다', JSON.stringify(shape.ids) === JSON.stringify(['ok-1', 'ok-2', 'ok-3']), shape.ids.join(', '));
+  check('날짜 계산이 넘치는 책이 있어도 읽는 중 탭이 그려진다', (await j.page.locator('.rcard').count()) === 3 && (await j.page.locator('.insights li').count()) >= 1);
   check('쪽수·사진·기록·리뷰의 어긋난 값이 걸러진다', shape.pages[0] === 300 && shape.pages[1] === 300 && JSON.stringify(shape.photos) === '["front"]' && shape.remote === false && shape.logs === 1 && shape.memo === '12' && shape.rating === 5 && shape.tags.length === 0, JSON.stringify(shape));
   check('모르는 블록은 텍스트가 되고 겹친 id는 새로 받는다', JSON.stringify(shape.blocks) === JSON.stringify(['p:string', 'todo:string', 'callout:string']) && shape.blockIds === 3);
-  check('겹친 도감 번호는 나중에 시작한 쪽이 새 번호를 받는다', shape.nos[0] === 2 && shape.nos[1] === 3 && shape.seq === 3, JSON.stringify(shape.nos));
+  check('겹친 도감 번호는 나중에 시작한 쪽이 새 번호를 받는다', shape.nos[0] === 2 && shape.nos[1] === 8 && shape.seq === 8, JSON.stringify(shape.nos));
   check('연혁·지움 표시·분석 지문의 어긋난 줄이 걸러진다', JSON.stringify(shape.entries) === JSON.stringify(['h1:milestone']) && shape.tomb.length === 0 && shape.analyzed.length === 0 && shape.summary === '9' && shape.insight.length === 1, JSON.stringify(shape.entries));
   check('다듬기는 두 번 해도 결과가 같다(되풀이 올리기 없음)', shape.stable);
+
+  // 합치기 · 시각 · 조사 · 한 줄 요약의 규칙(화면 없이 함수만)
+  const unit = await j.page.evaluate(async () => {
+    const { selfRead } = await import('./js/analyze.js');
+    const { josa } = await import('./js/dom.js');
+    const { mergeLibraries, canonical } = await import('./js/sync.js');
+    const { normalize, stampAfter } = await import('./js/store.js');
+    const book = (blocks, props = {}) => ({ id: 'x', title: 't', review: { props: { rating: 0, oneLine: '', before: '', after: '', tags: [], ...props }, blocks } });
+    const seedH = (text) => ({ id: text, type: 'h2', text, seed: true });
+    const r1 = selfRead(book([seedH('왜 읽었나'), { id: 'a', type: 'p', text: '큰 지도를 먼저 보고 싶었다. 그래서 골랐다.' }, seedH('달라진 것'), { id: 'b', type: 'p', text: '사실보다 믿음이 세상을 움직인다고 보게 됐다' }]));
+    const r2 = selfRead(book([seedH('왜 읽었나')], { rating: 4 }));
+    const base = () => normalize({ updatedAt: '2026-10-01T00:00:00.000Z', books: { b1: { title: '책', status: 'reading', no: 1, totalPages: 100, page: 10, addedAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-02T00:00:00.000Z', photos: { front: { v: 10, remote: true } } } } });
+    const A = base(); const B = base(); A.books.b1.page = 20; B.books.b1.page = 30;                       // 같은 시각, 다른 내용
+    const tie = canonical(mergeLibraries(A, B)) === canonical(mergeLibraries(B, A));
+    const C = base(); const D = base();                                                                    // 책은 C가 나중, 사진은 D가 새 판
+    C.books.b1.updatedAt = '2026-10-03T00:00:00.000Z'; C.books.b1.page = 55; D.books.b1.photos.front = { v: 12, w: 0, h: 0, bytes: 0, remote: true };
+    const cd = mergeLibraries(C, D).books.b1;
+    const E = base(); const F = base(); E.books.b1.photos.front.remote = false;                            // 같은 판, 한쪽만 올림 표시
+    const orFlag = mergeLibraries(E, F).books.b1.photos.front.remote;
+    const G = base(); const H = base(); delete G.books.b1; G.tombstones.b1 = '2026-10-02T12:00:00.000Z'; H.books.b1.updatedAt = '2026-10-03T00:00:00.000Z';
+    const res = mergeLibraries(G, H);                                                                      // 지운 뒤에 고쳐 되살아난 책
+    const I = base(); const J = base(); delete I.books.b1; I.tombstones.b1 = '2026-10-05T00:00:00.000Z';
+    const gone = mergeLibraries(I, J);                                                                     // 지운 것이 더 나중
+    const future = new Date(Date.now() + 3600e3).toISOString();
+    return {
+      line1: r1.line, shift1: r1.shift, line2: r2.line,
+      josa: [josa('40', '으로', '로'), josa('7', '으로', '로'), josa('Zero to One', '을', '를'), josa('총, 균, 쇠 (상)', '을', '를'), josa('사피엔스', '을', '를')].join(' '),
+      tie, cdPage: cd.page, cdPhoto: cd.photos.front.v, orFlag,
+      resurrected: Boolean(res.books.b1) && !Object.hasOwn(res.tombstones, 'b1') && res.books.b1.photos.front.remote === false,
+      stayGone: !gone.books.b1 && Boolean(gone.tombstones.b1),
+      stamp: stampAfter(future) > future,
+      farFuture: normalize({ updatedAt: '2099-01-01T00:00:00Z', books: {} }).updatedAt < '2090',
+      canon: normalize({ updatedAt: '2026-10-07T09:00:00+09:00', books: {} }).updatedAt,
+      reserved: Object.keys(normalize({ books: { constructor: { title: 'c' }, toString: { title: 't' }, ok: { title: 'o' } } }).books).join(','),
+    };
+  });
+  check('한 줄이 비어 있으면 본문의 첫 문장을 쓰고, 틀 제목(왜 읽었나)을 한 줄로 삼지 않는다', unit.line1 === '큰 지도를 먼저 보고 싶었다.' && unit.line2 === '리뷰를 남겼다.', `${unit.line1} / ${unit.line2}`);
+  check('읽기 전·후가 비어 있으면 본문의 「달라진 것」을 옮긴다', unit.shift1.includes('사실보다 믿음이'), unit.shift1);
+  check('조사: 숫자·ㄹ 받침·괄호·로마자', unit.josa === '으로 로 을(를) 을 를', unit.josa);
+  check('같은 시각에 다르게 고친 책은 어느 기기에서 합쳐도 같은 쪽이 남는다', unit.tie);
+  check('책은 나중에 고친 쪽, 사진은 칸마다 새 판이 남는다', unit.cdPage === 55 && unit.cdPhoto === 12 && unit.orFlag === true, JSON.stringify([unit.cdPage, unit.cdPhoto, unit.orFlag]));
+  check('지운 뒤에 고친 책은 되살아나고(사진은 다시 올리게), 지운 것이 나중이면 지워진 채로 남는다', unit.resurrected && unit.stayGone);
+  check('고친 시각은 앞선 값보다 반드시 뒤이고, 너무 먼 미래의 시각은 당겨 오며, 한 가지 모양으로 맞춘다', unit.stamp && unit.farFuture && unit.canon === '2026-10-07T00:00:00.000Z', unit.canon);
+  check('객체에 원래 있는 이름(constructor 등)은 책의 id로 받지 않는다', unit.reserved === 'ok', unit.reserved);
   await j.page.click('.rcard >> nth=0');
   await j.page.waitForSelector('.detail-title');
   check('어긋난 기록으로도 화면이 깨지지 않는다', (await j.page.textContent('.detail-title')) === '<b>굵게</b>' && j.errors.length === 0, j.errors.join(' | '));
@@ -536,19 +739,31 @@ try {
   const pp = pw.pages()[0] || await pw.newPage();
   const perr = [];
   pp.on('pageerror', (e) => perr.push(e.message));
-  await pp.goto(`${base}/`);
+  const pwaServer = await serve();                             // 연결이 끊긴 상황을 만들려고, 따로 닫을 수 있는 서버를 쓴다
+  const pbase = `http://localhost:${pwaServer.address().port}`;
+  // 같은 주소에 다른 앱의 캐시와, 이 앱의 옛 판 캐시가 이미 있다고 하자.
+  await pp.goto(`${pbase}/icons/favicon.svg`);
+  await pp.evaluate(async () => {
+    await (await caches.open('other-app-v1')).put('/x', new Response('x'));
+    await (await caches.open('dogam-v0.1.1-shell')).put('/y', new Response('y'));
+  });
+  await pp.goto(`${pbase}/`);
   await pp.waitForSelector('.tabbar');
   const ready = await pp.evaluate(async () => { const reg = await navigator.serviceWorker.ready; return Boolean(reg.active); });
   check('서비스 워커가 등록되고 켜진다', ready);
   await pp.reload();
   await pp.waitForSelector('.tabbar');
   check('다시 열면 서비스 워커가 화면을 맡는다', await pp.evaluate(() => Boolean(navigator.serviceWorker.controller)));
+  const cacheNames = await pp.evaluate(() => caches.keys());
+  check('같은 주소의 다른 캐시는 건드리지 않고, 이 앱의 옛 캐시만 치운다', cacheNames.includes('other-app-v1') && !cacheNames.includes('dogam-v0.1.1-shell') && cacheNames.some((k) => k.startsWith('dogam-') && k.endsWith('-shell')), cacheNames.join(', '));
   const cdp = await pw.newCDPSession(pp);
   const mf = await cdp.send('Page.getAppManifest');
   check('브라우저가 매니페스트를 오류 없이 읽는다', mf.url.endsWith('manifest.webmanifest') && mf.errors.length === 0, JSON.stringify(mf.errors));
   const inst = await cdp.send('Page.getInstallabilityErrors');
   check('설치를 막는 오류가 없다', inst.installabilityErrors.length === 0, JSON.stringify(inst.installabilityErrors));
   await pw.setOffline(true);
+  pwaServer.closeAllConnections();                             // setOffline만으로는 서비스 워커가 내는 요청이 끊기지 않는다
+  await new Promise((r) => pwaServer.close(r));
   await pp.reload();
   await pp.waitForSelector('.tabbar');
   await pp.click('.tabbar >> text="읽는 중"');

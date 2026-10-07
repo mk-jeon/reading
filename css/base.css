@@ -94,7 +94,7 @@ p { text-wrap: pretty; }
 .btn--primary { border-color: var(--accent); background: var(--accent); color: var(--accent-fg); }
 .btn--quiet { border-color: transparent; background: transparent; color: var(--ink-soft); }
 .btn--danger { border-color: var(--danger); color: var(--danger); }
-.btn--sm { min-height: 2.25rem; padding: 0 var(--s-3); font-size: var(--fs-13); }
+.btn--sm { min-height: 2.5rem; padding: 0 var(--s-3); font-size: var(--fs-13); }
 .btn--block { width: 100%; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn:disabled:active { transform: none; }
@@ -125,7 +125,9 @@ p { text-wrap: pretty; }
 .chip--ok { background: var(--accent-soft); color: var(--accent); }
 .chip--wait { background: var(--lack-soft); color: var(--lack); }
 .chip--bad { background: var(--danger-soft); color: var(--danger); }
-button.chip { cursor: pointer; }
+/* 누를 수 있는 칩: 보이는 크기는 그대로 두고, 누르는 자리만 40px로 넓힌다 */
+button.chip { position: relative; cursor: pointer; }
+button.chip::after { content: ""; position: absolute; inset: -0.5rem -0.25rem; }
 
 .tag {
   display: inline-flex; align-items: center; flex: none;
@@ -269,7 +271,7 @@ button.chip { cursor: pointer; }
 .steps { display: flex; flex-direction: column; gap: var(--s-1); padding-left: 1.25rem; list-style: decimal; font-size: var(--fs-13); line-height: 1.6; color: var(--ink-soft); }
 .steps li::marker { color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 .seg { display: inline-grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); padding: 2px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface-sunk); }
-.seg button { min-height: 2.25rem; padding: 0 var(--s-3); border-radius: 6px; font-size: var(--fs-13); font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
+.seg button { min-height: 2.5rem; padding: 0 var(--s-3); border-radius: 6px; font-size: var(--fs-13); font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
 .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); }
 
 /* ── 숨김: 맨 끝에 둔다 ─────────────────────────────── */
