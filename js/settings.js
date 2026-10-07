@@ -6,6 +6,7 @@ import { setMode, state, subscribe, wipeDevice } from './store.js';
 import { connect, disconnect, probeConnect, refreshViewer, scheduleSync, syncNow } from './sync.js';
 
 let installEvent = null;
+let tokenOpen = false;                     // 저장소 연결 안내(토큰 넣는 칸)를 펼쳤는지. 설정 창을 열 때마다 접어 둔다
 
 export function initInstall() {
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent = e; });
@@ -50,21 +51,22 @@ function tokenForm(repaint) {
       btn.textContent = '확인하는 중';
       err.textContent = '';
       try {
-        // 써 보기 모드에서 적은 것은 진짜 기록에 섞지 않는다. 저장소에 기록이 아직 없을 때만, 첫 기록으로 삼을지 묻는다.
+        // 이 기기에만 적은 기록은 저장소의 기록에 섞지 않는다. 저장소에 기록이 아직 없을 때만, 첫 기록으로 삼을지 묻는다.
         const probe = await probeConnect(token);
         let adoptTrial = false;
-        if (!probe.remoteExists && probe.trialChanged) {
+        if (probe.canAdopt) {
           adoptTrial = await confirmDialog({
-            title: '써 본 기록이 있습니다',
-            message: '저장소에는 아직 기록이 없습니다. 이 기기에서 써 본 기록을 첫 기록으로 올릴까요? 새로 시작해도 써 본 기록은 이 기기에 남아 있습니다.',
-            confirmLabel: '써 본 기록으로 시작', cancelLabel: '새로 시작',
+            title: '이 기기에 적은 기록이 있습니다',
+            message: '저장소에는 아직 기록이 없습니다. 이 기기에 적은 기록을 첫 기록으로 올릴까요? 새로 시작해도 이 기기의 기록은 그대로 남아 있습니다.',
+            confirmLabel: '이 기록으로 시작', cancelLabel: '새로 시작',
           });
           await layersSettled();
         }
         const out = await connect(token, { adoptTrial });
+        tokenOpen = false;
         if (!out.ok) toast('연결했지만 첫 저장을 마치지 못했습니다.', { duration: 5000 });
-        else if (out.trial === 'adopted') toast('저장소에 연결했습니다. 써 본 기록을 첫 기록으로 올렸습니다.', { duration: 5000 });
-        else if (out.trial === 'kept') toast('저장소에 연결했습니다. 써 본 기록은 합치지 않았습니다. 연결을 끊으면 다시 볼 수 있습니다.', { duration: 6000 });
+        else if (out.trial === 'adopted') toast('저장소에 연결했습니다. 이 기기의 기록을 첫 기록으로 올렸습니다.', { duration: 5000 });
+        else if (out.trial === 'kept') toast('저장소에 연결했습니다. 이 기기에만 적은 기록은 합치지 않았습니다. 연결을 끊으면 다시 볼 수 있습니다.', { duration: 6000 });
         else toast('저장소에 연결했습니다. 이제 여기서 적은 것이 저장소에 쌓입니다.');
         repaint();
       } catch (ex) {
@@ -128,15 +130,32 @@ function syncGroup(repaint) {
         } }, '지금 맞추기'),
         h('button', { class: 'btn btn--sm btn--quiet', type: 'button', onclick: () => askDisconnect(repaint) }, '연결 끊기')));
   }
+  // 연결하지 않은 기기. 기본은 「이 기기에 기록」이고, 저장소 연결(토큰)은 고르는 사람만 펼쳐 본다.
+  const local = state.mode === 'local';
+  const openToken = h('button', { class: 'btn btn--sm', type: 'button', 'aria-expanded': String(tokenOpen), onclick: () => { tokenOpen = !tokenOpen; repaint(); } },
+    tokenOpen ? '연결 안내 접기' : (local ? '저장소에 연결하기 (선택)' : '저장소에 연결하기'));
+  const toViewer = h('button', { class: 'btn btn--sm btn--quiet', type: 'button', onclick: async () => {
+    await setMode('viewer');
+    refreshViewer();
+    toast('공개된 기록을 보고 있습니다. 이 기기에 적은 기록은 그대로 남아 있습니다.');
+    repaint();
+  } }, '공개된 기록 구경하기');
+  const toLocal = h('button', { class: 'btn btn--sm', type: 'button', onclick: async () => {
+    await setMode('local');
+    toast('이제 이 기기에 기록합니다.');
+    repaint();
+  } }, '이 기기에 따로 기록하기');
   return h('section', { class: 'set-group' },
     h('h3', { class: 'set-title' }, '기록 모드'),
-    h('p', { class: 'note' }, state.mode === 'local'
-      ? '지금은 써 보는 중입니다. 여기서 적는 것은 이 기기에만 남고, 저장소의 기록과 섞이지 않습니다. 저장소에 아직 기록이 없을 때만, 연결하면서 첫 기록으로 올릴 수 있습니다.'
-      : '지금은 구경 모드입니다. 기록하려면 저장소에 쓸 수 있는 토큰이 필요합니다.'),
-    tokenForm(repaint),
-    h('div', { class: 'set-row' }, state.mode === 'local'
-      ? h('button', { class: 'btn btn--sm btn--quiet', type: 'button', onclick: async () => { await setMode('viewer'); refreshViewer(); toast('구경 모드로 돌아왔습니다. 써 본 기록은 이 기기에 남아 있습니다.'); repaint(); } }, '구경 모드로 돌아가기')
-      : h('button', { class: 'btn btn--sm btn--quiet', type: 'button', onclick: async () => { await setMode('local'); toast('써 보는 중입니다. 여기서 적는 것은 저장소로 올라가지 않습니다.'); repaint(); } }, '토큰 없이 이 기기에서만 써 보기')));
+    h('p', null, local
+      ? '지금은 이 기기에 기록하고 있습니다. 토큰이나 설정 없이 바로 쓰면 됩니다.'
+      : '지금은 공개된 기록을 구경하고 있습니다. 읽기만 할 수 있습니다.'),
+    h('p', { class: 'note' }, local
+      ? '기록과 사진은 이 기기의 이 브라우저에만 남습니다. 다른 기기에서도 같은 기록을 이어 쓰려면 저장소에 연결합니다.'
+      : '이 기기에 따로 기록하면 공개된 기록과는 섞이지 않습니다. 공개된 기록을 이어 쓰려면 저장소에 연결합니다.'),
+    h('div', { class: 'set-row' }, local ? [openToken, toViewer] : [toLocal, openToken]),
+    tokenOpen ? h('p', { class: 'note' }, '연결하면 기록을 저장소의 data 브랜치에 올려 두고 기기끼리 맞춥니다. 저장소가 공개라서 올린 기록과 사진은 누구나 볼 수 있습니다. 저장소에 이미 기록이 있으면 그 기록을 쓰고, 이 기기에만 적은 것은 합치지 않습니다.') : null,
+    tokenOpen ? tokenForm(repaint) : null);
 }
 
 function photoGroup(repaint) {
@@ -208,7 +227,7 @@ function installGroup(repaint) {
 function dataGroup(repaint, modal) {
   if (state.mode === 'viewer') return null;
   return h('section', { class: 'set-group' },
-    h('h3', { class: 'set-title' }, state.mode === 'local' ? '써 본 기록' : '이 기기의 사본'),
+    h('h3', { class: 'set-title' }, state.mode === 'local' ? '이 기기의 기록' : '이 기기의 사본'),
     h('div', { class: 'set-row' },
       h('button', { class: 'btn btn--sm', type: 'button', onclick: () => {
         const blob = new Blob([JSON.stringify(state.lib, null, 1)], { type: 'application/json' });
@@ -221,19 +240,20 @@ function dataGroup(repaint, modal) {
       } }, '기록 내려받기'),
       h('button', { class: 'btn btn--sm btn--danger', type: 'button', onclick: async () => {
         const yes = await confirmDialog({
-          title: state.mode === 'owner' ? '이 기기의 사본 지우기' : '써 본 기록 지우기',
+          title: state.mode === 'owner' ? '이 기기의 사본 지우기' : '이 기기의 기록 지우기',
           message: state.mode === 'owner'
             ? '이 기기에 둔 기록 사본과 사진을 지웁니다. 저장소의 기록은 그대로이고, 다음에 맞출 때 다시 받아 옵니다. 아직 저장소에 올리지 않은 기록과 사진은 사라집니다.'
-            : '이 기기에서 써 본 기록과 사진을 모두 지웁니다. 되돌릴 수 없습니다.',
+            : '이 기기에 적은 기록과 사진을 모두 지우고 첫 상태로 돌립니다. 다른 곳에 사본이 없으므로 되돌릴 수 없습니다.',
           confirmLabel: '지우기', danger: true,
         });
         if (!yes) return;
         await wipeDevice();
         if (state.mode === 'owner') scheduleSync(300);
-        toast(state.mode === 'owner' ? '이 기기의 사본을 지웠습니다.' : '써 본 기록을 지웠습니다.');
+        toast(state.mode === 'owner' ? '이 기기의 사본을 지웠습니다.' : '이 기기의 기록을 지웠습니다.');
         await layersSettled();
         modal.close();
-      } }, state.mode === 'owner' ? '사본 지우기' : '써 본 기록 지우기')));
+      } }, state.mode === 'owner' ? '사본 지우기' : '기록 지우기')),
+    state.mode === 'local' ? h('p', { class: 'note' }, '내려받은 파일에는 기록(글)만 들어 있고 사진은 들어 있지 않습니다.') : null);
 }
 
 export function openSettings() {
@@ -245,6 +265,7 @@ export function openSettings() {
       h('section', { class: 'set-group' }, h('p', { class: 'note' }, `${APP_NAME} ${APP_VERSION}`), h('p', { class: 'note' }, '앱은 main 브랜치, 기록은 data 브랜치에 있습니다.'))].filter(Boolean));
   };
   const off = subscribe((type) => { if (type === 'sync' || type === 'mode') repaint(); });
+  tokenOpen = false;
   modal = openModal({ title: '설정', content: body, onClose: off });
   repaint();
 }

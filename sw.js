@@ -5,7 +5,7 @@
 // GitHub API와 기록 파일(library.json) 요청에는 끼어들지 않는다.
 // 파일 목록을 바꾸면 VERSION도 함께 올린다.
 
-const VERSION = 'v0.2.0';
+const VERSION = 'v0.2.1';
 // 캐시 이름에는 이 앱이 놓인 경로를 넣는다. 같은 주소(<owner>.github.io) 아래의 다른 페이지나
 // 이 앱의 다른 사본이 담아 둔 것을 건드리지 않으려는 것이다.
 const NS = `dogam${new URL(self.registration.scope).pathname.replace(/[^a-z0-9]+/gi, '-')}`;

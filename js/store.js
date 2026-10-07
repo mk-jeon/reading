@@ -2,9 +2,11 @@
 // 화면은 여기의 함수로만 기록을 바꾸고, 바뀌면 subscribe()로 알림을 받는다.
 //
 // 모드와 이 기기의 보관 칸(서로 섞이지 않는다)
-//   viewer : 구경. 저장소에 공개된 기록을 읽기만 한다.          → kv 'viewer-cache'
-//   owner  : 기록. 이 기기에 사본을 두고 저장소(data 브랜치)와 맞춘다. → kv 'lib'
-//   local  : 이 기기에서만 써 보기. 저장소로 올라가지 않는 연습장이다.  → kv 'lib-local', 사진 키 'local:…'
+//   local  : 이 기기에 기록(기본). 토큰 없이 바로 쓴다. 저장소로 올라가지 않는다. → kv 'lib-local', 사진 키 'local:…'
+//   owner  : 저장소 연결. 이 기기에 사본을 두고 저장소(data 브랜치)와 맞춘다.   → kv 'lib'
+//   viewer : 구경. 저장소에 공개된 기록을 읽기만 한다.                        → kv 'viewer-cache'
+//
+// 처음 연 기기는 설정 없이 local로 시작한다. 다만 이 기기에 적은 것이 없고 공개된 기록이 이미 있으면 그 기록을 보여 준다(viewer).
 
 import { kv, photoStore } from './db.js';
 import { seedLibrary } from './seed.js';
@@ -208,8 +210,11 @@ export function normalize(lib) {
 }
 
 // ── 이 기기의 보관함 ─────────────────────────────────────
-/** 브라우저가 이 기기의 보관함을 마음대로 비우지 않게 청한다(써 본 기록·올리기 전 사진을 지키려는 것). */
+/** 브라우저가 이 기기의 보관함을 마음대로 비우지 않게 청한다(이 기기의 기록·올리기 전 사진을 지키려는 것). 한 번만 청한다. */
+let persistAsked = false;
 function askPersist() {
+  if (persistAsked) return;
+  persistAsked = true;
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch { /* 지원하지 않는 브라우저 */ }
 }
 
@@ -241,25 +246,34 @@ async function persist(lib, key) {
   }
 }
 
-/** 사진 원본을 두는 키. 써 보기 모드의 사진은 따로 둔다. */
+/** 사진 원본을 두는 키. 이 기기에만 적은 기록(local)의 사진은 따로 둔다. */
 export const photoKey = (bookId, slot, mode = state.mode) => (mode === 'local' ? `local:${bookId}/${slot}` : `${bookId}/${slot}`);
 
 export async function boot() {
   const token = lsGet(LS.token);
-  state.mode = token ? 'owner' : (lsGet(LS.mode) === 'local' ? 'local' : 'viewer');
+  const pref = lsGet(LS.mode);
+  if (token) state.mode = 'owner';
+  else if (pref === 'local' || pref === 'viewer') state.mode = pref;
+  else {
+    // 모드를 고른 적 없는 기기: 설정 없이 바로 기록한다(local).
+    // 이 기기에 적은 것이 없고 공개된 기록을 받아 둔 적이 있을 때만 그 기록을 보여 준다(viewer).
+    const seen = await kv.get(KEY.viewer).catch(() => null);
+    state.mode = seen && !(await trialInfo()).changed ? 'viewer' : 'local';
+  }
   const stored = await kv.get(keyOf()).catch(() => null);
   state.lib = normalize(stored || seedLibrary());
   state.ready = true;
-  if (state.mode !== 'viewer') askPersist();
+  if (state.mode === 'owner' || pref === 'local') askPersist();
 }
 
 /**
  * 모드를 바꾼다.
  *   viewer : 마지막으로 받아 둔 공개 기록(없으면 첫 상태)을 보인다.
- *   local  : 써 보던 기록이 있으면 그것을, 없으면 지금 보이던 기록의 사본에서 시작한다.
+ *   local  : 이 기기에 적던 기록이 있으면 그것을, 없으면 지금 보이던 기록의 사본에서 시작한다.
  *   owner  : start가 있으면 그것에서, 없으면 이 기기에 두었던 기록 사본(없으면 지금 보이던 기록)에서 시작한다.
+ * remember가 거짓이면 고른 것으로 치지 않는다(앱이 스스로 바꿀 때. 다음에 열 때 다시 정한다).
  */
-export async function setMode(mode, { start = null } = {}) {
+export async function setMode(mode, { start = null, remember = true } = {}) {
   if (mode === state.mode && !start) return;
   let lib;
   if (mode === 'viewer') {
@@ -274,7 +288,7 @@ export async function setMode(mode, { start = null } = {}) {
     lib = normalize(structuredClone(mine || state.lib));
     await kv.set(KEY.owner, lib);
   }
-  lsSet(LS.mode, mode === 'local' ? 'local' : null);
+  if (remember) lsSet(LS.mode, mode === 'owner' ? null : mode);
   if (mode !== 'viewer') askPersist();
   epoch += 1;
   state.lib = lib;
@@ -283,7 +297,7 @@ export async function setMode(mode, { start = null } = {}) {
   emit('lib', { reason: 'mode' });
 }
 
-/** 써 보기 모드에 남아 있는 기록. changed: 써 보기를 시작한 뒤로 무엇이든 고쳤는지. */
+/** 이 기기에만 적은 기록(local 모드). changed: 첫 상태에서 무엇이든 고쳤는지. */
 export async function trialInfo() {
   const lib = await kv.get(KEY.local).catch(() => null);
   if (!lib) return { exists: false, changed: false, lib: null };
@@ -291,7 +305,7 @@ export async function trialInfo() {
   return { exists: true, changed: lib.updatedAt !== base, lib };
 }
 
-/** 써 본 기록을 진짜 기록의 출발점으로 삼을 때: 써 보기 모드의 사진을 기록 모드의 자리로 옮긴다. */
+/** 이 기기에 적은 기록을 저장소의 첫 기록으로 삼을 때: local 모드의 사진을 연결한 기록의 자리로 옮긴다. */
 export async function adoptTrialPhotos() {
   for (const key of await photoStore.keys()) {
     if (typeof key !== 'string' || !key.startsWith('local:')) continue;
@@ -301,7 +315,7 @@ export async function adoptTrialPhotos() {
   }
 }
 
-/** 써 본 기록과 그 사진을 지운다. */
+/** 이 기기에만 적은 기록(local 모드)과 그 사진을 지운다. */
 export async function dropTrial() {
   await kv.del(KEY.local);
   await kv.del('local-base');
@@ -318,6 +332,7 @@ export async function commit(fn, { silent = false, reason = '', fromSync = false
   if (!canEdit()) return false;
   const lib = state.lib;
   if (fn(lib) === false) return false;
+  askPersist();
   lib.updatedAt = stampAfter(lib.updatedAt);
   lastReason = reason || lastReason;
   await persist(lib, keyOf());
@@ -439,7 +454,7 @@ export async function removeBook(id) {
   }, { reason: '책 삭제' });
   if (!done) return false;
   for (const s of PHOTO_SLOTS) await photoStore.del(photoKey(id, s.key, mode)).catch(() => {});
-  // 저장소에 올린 사진은 다음 맞추기 때 지운다. 써 보기 모드에서는 저장소를 건드리지 않는다.
+  // 저장소에 올린 사진은 다음 맞추기 때 지운다. 이 기기에만 기록할 때(local)는 저장소를 건드리지 않는다.
   if (mode === 'owner') await updatePendingDeletes((cur) => (cur.includes(id) ? cur : [...cur, id]));
   return true;
 }
@@ -569,12 +584,22 @@ export function saveHistory(mutator) {
   }, { reason: '연혁' });
 }
 
-/** 이 기기에 둔 것(기록 사본 · 써 본 기록 · 사진 · 대기열)을 모두 지운다. 저장소의 기록은 그대로다. */
+/**
+ * 이 기기에 둔 것을 지운다. 저장소의 기록은 그대로다.
+ *   local 모드에서: 이 기기에만 적은 기록과 그 사진만 지운다(연결해 쓰던 사본은 건드리지 않는다).
+ *   그 밖(연결한 기기 · 연결을 끊으며): 저장소 기록의 사본 · 받아 둔 공개 기록 · 그 사진 · 대기열을 지운다.
+ *   이 기기에만 적은 기록(local)은 남긴다. 그것을 지우는 단추는 따로 있다.
+ */
 export async function wipeDevice() {
   const mode = state.mode;
   epoch += 1;                              // 돌고 있던 맞추기가 이 뒤로는 아무것도 올리지 않게 한다
-  await kv.clear();
-  await photoStore.clear();
+  if (mode === 'local') await dropTrial();
+  else {
+    for (const key of [KEY.owner, KEY.viewer, 'pending-deletes']) await kv.del(key);
+    for (const key of await photoStore.keys()) {
+      if (!(typeof key === 'string' && key.startsWith('local:'))) await photoStore.del(key);
+    }
+  }
   epoch += 1;
   state.lib = normalize(seedLibrary());
   if (mode !== 'viewer') await persist(state.lib, keyOf(mode));

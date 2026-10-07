@@ -443,13 +443,9 @@ function modeBanner(ctx) {
   if (store.state.mode === 'viewer') {
     return h('div', { class: 'banner' },
       h('span', null, h('b', null, '구경 중입니다. '), '공개된 기록을 보고 있습니다.'),
-      h('button', { class: 'btn btn--sm', type: 'button', onclick: () => ctx.openSettings() }, '기록 모드 켜기'));
+      h('button', { class: 'btn btn--sm', type: 'button', onclick: () => ctx.openSettings() }, '기록하기'));
   }
-  if (store.state.mode === 'local') {
-    return h('div', { class: 'banner' },
-      h('span', null, h('b', null, '써 보는 중입니다. '), '여기서 적는 것은 이 기기에만 남고, 저장소의 기록과 섞이지 않습니다.'),
-      h('button', { class: 'btn btn--sm', type: 'button', onclick: () => ctx.openSettings() }, '저장소에 연결'));
-  }
+  // 이 기기에 기록할 때(기본)와 저장소에 연결했을 때는 띠를 두지 않는다. 어디에 저장되는지는 상단 표지가 말한다.
   return null;
 }
 

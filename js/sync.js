@@ -435,19 +435,46 @@ export async function refreshViewer() {
 }
 
 /**
- * 연결하기 전에 알아 둘 것: 저장소에 기록이 이미 있는지, 이 기기에 써 본 기록이 남아 있는지.
+ * 모드를 고른 적 없는 기기가 열렸을 때 한 번: 공개된 기록이 이미 있고 이 기기에 적은 것이 없으면 그 기록을 보여 준다(구경).
+ * 공개된 기록이 없으면 그대로 이 기기에 기록한다. busy()가 참이면(창이 열려 있거나 입력 중) 이번에는 바꾸지 않는다.
+ */
+async function followPublic(busy) {
+  const auto = () => state.mode === 'local' && !lsGet(LS.mode) && !lsGet(LS.token);
+  if (!auto()) return;
+  state.fetching = true;
+  let json = null;
+  try {
+    const res = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${DATA_BRANCH}/${LIB_PATH}?t=${Date.now()}`, { cache: 'no-store', signal: timeoutSignal(TIMEOUT) });
+    if (res.ok) json = await res.json();
+  } catch { /* 연결이 없으면 이 기기의 기록으로 계속한다 */ }
+  state.fetching = false;
+  try {
+    const found = Boolean(json) && typeof json === 'object' && !Array.isArray(json);
+    if (found && auto() && !busy() && !(await trialInfo()).changed && auto() && !busy()) {
+      await setMode('viewer', { remember: false });
+      await replaceLibrary(json, { cacheKey: 'viewer-cache', reason: 'viewer' });
+      return;
+    }
+  } catch { /* 보관함을 못 쓰면 그대로 둔다 */ }
+  emit('lib', { reason: 'viewer' });
+}
+
+/**
+ * 연결하기 전에 알아 둘 것: 저장소에 기록이 이미 있는지, 이 기기에 적은 기록이 있는지.
  * 토큰이 틀렸으면 여기서 오류가 난다.
  */
 export async function probeConnect(token) {
   await verifyToken(token);
   const remote = await pullLibrary(token);
   const trial = await trialInfo();
-  return { remoteExists: Boolean(remote), trialChanged: trial.changed };
+  const mine = await kv.get('lib').catch(() => null);
+  // 이 기기에 적은 기록을 첫 기록으로 삼을 수 있는 것은, 저장소에 기록이 없고 연결해 쓰던 사본도 없을 때뿐이다.
+  return { remoteExists: Boolean(remote), trialChanged: trial.changed, canAdopt: !remote && !mine && trial.changed };
 }
 
 /**
- * 토큰으로 저장소에 연결한다. 써 보기 모드의 기록은 진짜 기록에 섞지 않는다.
- * 다만 저장소에 기록이 아직 없고 adoptTrial이 참이면, 써 본 기록을 첫 기록으로 삼는다.
+ * 토큰으로 저장소에 연결한다. 이 기기에만 적은 기록(local)은 저장소의 기록에 섞지 않는다.
+ * 다만 저장소에 기록이 아직 없고(연결해 쓰던 사본도 없고) adoptTrial이 참이면, 이 기기의 기록을 첫 기록으로 삼는다.
  * @returns {Promise<{ ok: boolean, remoteExists: boolean, trial: 'adopted'|'kept'|'none' }>}
  */
 export async function connect(token, { adoptTrial = false } = {}) {
@@ -458,7 +485,7 @@ export async function connect(token, { adoptTrial = false } = {}) {
   let start;
   let used = trial.changed ? 'kept' : 'none';
   if (remote) start = mine || remote.lib;
-  else if (adoptTrial && trial.exists) { start = trial.lib; used = 'adopted'; }
+  else if (adoptTrial && trial.exists && !mine) { start = trial.lib; used = 'adopted'; }
   else start = mine || seedLibrary();
 
   lsSet(LS.token, token);
@@ -488,7 +515,7 @@ export async function disconnect({ wipe = false } = {}) {
   await refreshViewer();
 }
 
-export function initSync() {
+export function initSync({ busy = () => false } = {}) {
   onCommit(() => scheduleSync());
   window.addEventListener('online', () => { if (state.mode === 'owner') scheduleSync(300, { quiet: true }); });
   // 다른 기기에서 고친 기록을 받아 오도록, 화면으로 돌아올 때마다 한 번 맞춘다.
@@ -499,4 +526,5 @@ export function initSync() {
   });
   if (state.mode === 'owner') syncNow();
   else if (state.mode === 'viewer') refreshViewer();
+  else followPublic(busy);
 }

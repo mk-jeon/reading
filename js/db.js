@@ -1,6 +1,6 @@
 // db.js — 이 기기의 보관함(IndexedDB). 기록의 정본은 저장소이고, 여기는 사본과 대기열이다.
-//   kv     : 기록 사본(lib · lib-local · viewer-cache), 써 보기의 출발 시각(local-base), 저장소에서 지울 사진 목록(pending-deletes)
-//   photos : 줄인 사진(Blob). 키는 "<bookId>/<slot>", 써 보기 모드의 것은 "local:<bookId>/<slot>"
+//   kv     : 기록(lib-local: 이 기기에만 적은 것 · lib: 저장소와 맞추는 사본 · viewer-cache: 받아 둔 공개 기록), local-base, 저장소에서 지울 사진 목록(pending-deletes)
+//   photos : 줄인 사진(Blob). 키는 "<bookId>/<slot>", 이 기기에만 적은 기록의 것은 "local:<bookId>/<slot>"
 
 import { DB_NAME } from './config.js';
 

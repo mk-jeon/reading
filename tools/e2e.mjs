@@ -177,14 +177,35 @@ const browser = await chromium.launch();
 const gh = fakeGitHub();
 
 try {
-  // 1) 구경 모드 ------------------------------------------------
-  console.log('\n[1] 구경 모드');
+  // 1) 처음 연 기기 · 구경 모드 ---------------------------------
+  console.log('\n[1] 처음 연 기기(설정 없이 바로 기록) · 구경 모드');
   const v = await newDevice(browser, base, gh);
   check('나 탭이 첫 화면이고 큰 제목이 보인다', (await v.page.textContent('.hero-title')).includes('독서를 다시 시작해 본다'));
   check('가로로 넘치지 않는다', (await overflow(v.page)) === 0);
   await shot(v.page, '01-cover-me');
   await tab(v.page, '읽는 중');
   check('대기에 다섯 권이 있다', (await v.page.locator('.srow').count()) === 5);
+  check('처음 열면 토큰이나 설정 없이 바로 기록할 수 있다(책 추가 단추, 「이 기기에 저장」)',
+    (await v.page.locator('button:has-text("책 추가")').count()) === 1 && (await v.page.textContent('.topbar .chip')) === '이 기기에 저장' && (await v.page.locator('.banner').count()) === 0);
+  await v.page.click('button:has-text("책 추가")');
+  await v.page.fill('#title', '처음 연 기기에서 넣은 책');
+  await v.page.press('#title', 'Enter');
+  await v.page.waitForSelector('.srow:has-text("처음 연 기기에서 넣은 책")');
+  await v.page.reload();
+  await v.page.waitForSelector('.tabbar');
+  await tab(v.page, '읽는 중');
+  check('설정 없이 넣은 책이 다시 열어도 남아 있다', (await v.page.locator('.srow:has-text("처음 연 기기에서 넣은 책")').count()) === 1 && (await v.page.textContent('.topbar .chip')) === '이 기기에 저장');
+  await v.page.click('button[aria-label="설정"]');
+  check('설정의 첫머리가 토큰을 요구하지 않는다(연결은 펼쳐야 보인다)', (await v.page.textContent('.settings')).includes('토큰이나 설정 없이 바로 쓰면 됩니다') && (await v.page.locator('#gh-token').count()) === 0);
+  await v.page.click('.settings button:has-text("기록 지우기")');
+  await v.page.click('.dialog-foot button:has-text("지우기")');
+  await v.page.waitForFunction(() => !document.querySelector('.settings'));
+  await v.page.waitForSelector('.srow');
+  check('이 기기의 기록을 지우면 첫 상태로 돌아간다', (await v.page.locator('.srow').count()) === 5);
+  await v.page.click('button[aria-label="설정"]');
+  await v.page.click('.settings button:has-text("공개된 기록 구경하기")');
+  await v.page.click('.dialog button[aria-label="닫기"]');
+  check('구경 모드로 바꾸면 상단 표지가 「구경 중」이 된다', (await v.page.textContent('.topbar .chip')) === '구경 중');
   check('구경 모드에서는 책 추가 단추가 없다', (await v.page.locator('button:has-text("책 추가")').count()) === 0);
   await v.page.click('.srow >> text="사피엔스"');
   await v.page.waitForSelector('.detail-title');
@@ -216,17 +237,16 @@ try {
   await shot(w.page, '18-wide-me');
   await w.ctx.close();
 
-  // 2) 이 기기에서만 써 보기 ------------------------------------
-  console.log('\n[2] 이 기기에서만 써 보기: 등록 → 사진 4장 → 진척 → 완독 → 리뷰 → 히스토리');
+  // 2) 이 기기에 기록 --------------------------------------------
+  console.log('\n[2] 이 기기에 기록(토큰 없이): 등록 → 사진 4장 → 진척 → 완독 → 리뷰 → 히스토리');
   const a = await newDevice(browser, base, gh);
   const p = a.page;
   const fontHits = { rest: 0 };
   p.on('request', (r) => { if (r.url().endsWith('PretendardVariable.rest.woff2')) fontHits.rest += 1; });
   await p.click('button[aria-label="설정"]');
   await shot(p, '11-cover-settings');
-  await p.click('text=토큰 없이 이 기기에서만 써 보기');
   await p.click('.dialog button[aria-label="닫기"]');
-  check('상단 표지가 「이 기기에만」으로 바뀐다', (await p.textContent('.topbar .chip')) === '이 기기에만');
+  check('상단 표지가 「이 기기에 저장」이다', (await p.textContent('.topbar .chip')) === '이 기기에 저장');
   await tab(p, '읽는 중');
   await p.click('.srow >> text="사피엔스"');
   await p.waitForSelector('.detail-title');
@@ -359,11 +379,12 @@ try {
   await p.click('.dialog-foot button:has-text("대기에 넣기")');
   await p.waitForSelector('.srow:has-text("시험")');
   check('제목에 넣은 태그는 글자 그대로 보이고 실행되지 않는다', (await p.evaluate(() => window.__xss)) === undefined && (await p.locator('.srow img').count()) === 0);
-  check('써 보기 흐름: 오류 없음', a.errors.length === 0, a.errors.join(' | '));
+  check('이 기기에 기록하는 흐름: 오류 없음', a.errors.length === 0, a.errors.join(' | '));
 
   // 3) 저장소 연결 ---------------------------------------------
   console.log('\n[3] 저장소 연결: 브랜치 만들기 → 사진 올리기 → 다른 기기에서 이어 보기 → 겹친 수정 합치기');
   await p.click('button[aria-label="설정"]');
+  await p.click('.settings button:has-text("저장소에 연결하기")');
   await p.fill('#gh-token', 'not a token');
   await p.click('.settings button[type="submit"]');
   check('토큰 모양이 아닌 글자는 보내지 않고 거절한다', (await p.textContent('.settings .field-error')).includes('토큰 모양이 아닙니다') && !gh.repo.calls.length);
@@ -373,9 +394,9 @@ try {
   check('틀린 토큰은 이유와 함께 거절된다', (await p.textContent('.settings')).includes('토큰이 틀렸거나'));
   await p.fill('#gh-token', GOOD_TOKEN);
   await p.click('.settings button[type="submit"]');
-  await p.waitForSelector('.dialog:has-text("써 본 기록이 있습니다")');
-  check('저장소에 기록이 없을 때만, 써 본 기록을 첫 기록으로 삼을지 묻는다', true);
-  await p.click('.dialog button:has-text("써 본 기록으로 시작")');
+  await p.waitForSelector('.dialog:has-text("이 기기에 적은 기록이 있습니다")');
+  check('저장소에 기록이 없을 때만, 이 기기의 기록을 첫 기록으로 삼을지 묻는다', true);
+  await p.click('.dialog button:has-text("이 기록으로 시작")');
   await p.waitForFunction(() => document.querySelector('.topbar .chip').textContent === '저장됨', null, { timeout: 30000 });
   check('연결하면 상단 표지가 「저장됨」이 된다', true);
   check('기록 브랜치를 빈 뿌리에서 새로 만든다', gh.repo.calls.includes('POST /git/refs') && gh.repo.branch);
@@ -394,9 +415,11 @@ try {
 
   const b = await newDevice(browser, base, gh, { width: 700, height: 780 });
   const q = b.page;
+  const viewing = (page) => page.waitForFunction(() => document.querySelector('.topbar .chip').textContent === '구경 중', null, { timeout: 15000 }).then(() => true, () => false);
+  check('공개된 기록이 있으면, 처음 연 다른 기기는 그 기록을 구경 모드로 보여 준다', await viewing(q));
   await tab(q, '읽는 중');
   await q.waitForSelector('.srow:has-text("사피엔스")');
-  check('다른 기기(구경 모드)에서 공개된 기록이 보인다', (await q.textContent('.topbar .chip')) === '구경 중');
+  check('다른 기기(구경 모드)에서 공개된 기록이 보인다', (await q.textContent('.topbar .chip')) === '구경 중' && (await q.locator('button:has-text("책 추가")').count()) === 0);
   await q.click('.srow:has-text("사피엔스")');
   await q.waitForSelector('.plate img');
   check('다른 기기에서는 저장소에 올린 사진을 받아 보여 준다', (await q.getAttribute('.plate img', 'src')).includes('raw.githubusercontent.com'));
@@ -421,6 +444,7 @@ try {
 
   // 두 번째 기기도 연결하고, 두 기기에서 서로 다른 책을 고친다
   await q.click('button[aria-label="설정"]');
+  await q.click('.settings button:has-text("저장소에 연결하기")');
   await q.fill('#gh-token', GOOD_TOKEN);
   await q.click('.settings button[type="submit"]');
   await q.waitForFunction(() => document.querySelector('.topbar .chip').textContent === '저장됨', null, { timeout: 30000 });
@@ -518,10 +542,11 @@ try {
   check('사진을 올리는 도중에 사본을 지워도, 저장소의 기록이 첫 상태로 덮이지 않는다', london() && london().status === 'reading' && london().totalPages === 300 && tokyo && tokyo.status === 'reading' && tokyo.logs.length >= 3, JSON.stringify({ london: london() && london().status, tokyoLogs: tokyo && tokyo.logs.length }));
   check('사본을 지운 기기는 저장소의 기록을 다시 받아 보여 준다', (await p.locator('.rcard').count()) === 2);
 
-  // 써 보기 모드에서 지우거나 고친 것은 진짜 기록에 섞이지 않는다
+  // 이 기기에 따로 적은 것(지우거나 고친 것)은 저장소의 기록에 섞이지 않는다
   const t = await newDevice(browser, base, gh);
+  await viewing(t.page);
   await t.page.click('button[aria-label="설정"]');
-  await t.page.click('text=토큰 없이 이 기기에서만 써 보기');
+  await t.page.click('.settings button:has-text("이 기기에 따로 기록하기")');
   await t.page.click('.dialog button[aria-label="닫기"]');
   await tab(t.page, '읽는 중');
   await t.page.click('.srow:has-text("총균쇠")');
@@ -530,15 +555,26 @@ try {
   await t.page.click('.dialog-foot button:has-text("지우기")');
   await t.page.waitForFunction(() => ![...document.querySelectorAll('.srow-title')].some((e) => e.textContent === '총균쇠'));
   await t.page.click('button[aria-label="설정"]');
+  await t.page.click('.settings button:has-text("저장소에 연결하기")');
   await t.page.fill('#gh-token', GOOD_TOKEN);
   await t.page.click('.settings button[type="submit"]');
   await t.page.waitForFunction(() => document.querySelector('.topbar .chip').textContent === '저장됨', null, { timeout: 30000 });
   const keptToast = await t.page.textContent('.toasts');
-  await t.page.click('.dialog button[aria-label="닫기"]');
   const lib3 = gh.library();
-  check('써 보기 모드에서 지운 책은 진짜 기록에서 지워지지 않는다', Object.values(lib3.books).some((x) => x.title === '총균쇠') && !Object.keys(lib3.tombstones).includes('seed-ggs') && (await t.page.locator('.srow:has-text("총균쇠")').count()) === 1, keptToast);
-  check('써 본 기록을 합치지 않았다고 알린다', keptToast.includes('합치지 않았습니다'), keptToast);
-  check('써 보기 흐름(두 번째): 오류 없음', t.errors.length === 0, t.errors.join(' | '));
+  check('이 기기에 따로 적으며 지운 책은 저장소의 기록에서 지워지지 않는다', Object.values(lib3.books).some((x) => x.title === '총균쇠') && !Object.keys(lib3.tombstones).includes('seed-ggs') && (await t.page.locator('.srow:has-text("총균쇠")').count()) === 1, keptToast);
+  check('이 기기에만 적은 기록을 합치지 않았다고 알린다', keptToast.includes('합치지 않았습니다'), keptToast);
+  // 연결한 기기에서 사본을 지워도, 이 기기에만 적어 둔 기록은 남는다
+  await t.page.click('.settings button:has-text("사본 지우기")');
+  await t.page.click('.dialog-foot button:has-text("지우기")');
+  await t.page.waitForFunction(() => !document.querySelector('.settings'));
+  const keptLocal = await t.page.evaluate(async () => {
+    const db = await new Promise((res) => { const r = indexedDB.open('dogam-reading'); r.onsuccess = () => res(r.result); });
+    const get = (k) => new Promise((res) => { const r = db.transaction('kv').objectStore('kv').get(k); r.onsuccess = () => res(r.result); });
+    const local = await get('lib-local');
+    return Boolean(local) && !Object.values(local.books).some((x) => x.title === '총균쇠');
+  });
+  check('연결한 기기에서 사본을 지워도, 이 기기에만 적은 기록은 지워지지 않는다', keptLocal);
+  check('따로 기록하는 흐름: 오류 없음', t.errors.length === 0, t.errors.join(' | '));
   await t.ctx.close();
 
   // 답이 없는 요청은 끊고, 스스로 다시 시도한다

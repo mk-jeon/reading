@@ -1,7 +1,7 @@
 // app.js — 시작점. 틀(상단 바·탭 바)을 짓고, 주소(#/me, #/reading, #/reading/b/<id>, #/history)에 맞는 화면을 그린다.
 
 import { APP_NAME, LS } from './config.js';
-import { h, icon, toast } from './dom.js';
+import { h, icon, isLayerOpen, toast } from './dom.js';
 import { renderHistory } from './history.js';
 import { renderMe } from './me.js';
 import { leaveReading, renderReading } from './reading.js';
@@ -66,7 +66,7 @@ function paintChip() {
   const s = state.sync;
   let text = '구경 중';
   let cls = 'chip';
-  if (state.mode === 'local') { text = '이 기기에만'; cls = 'chip chip--wait'; }
+  if (state.mode === 'local') text = '이 기기에 저장';
   else if (state.mode === 'owner') {
     text = { saved: '저장됨', idle: '연결됨', syncing: '올리는 중', pending: '저장 대기', offline: '오프라인', error: '저장 오류' }[s.status] || '연결됨';
     cls = s.status === 'error' ? 'chip chip--bad' : (s.status === 'pending' || s.status === 'offline') ? 'chip chip--wait' : s.status === 'syncing' ? 'chip' : 'chip chip--ok';
@@ -140,7 +140,8 @@ async function start() {
   });
   // 맞추기(또는 공개된 기록 받기)를 먼저 걸어 두고 그린다. 책 주소로 바로 들어온 구경꾼에게
   // 기록을 받기 전부터 "없는 책"이라고 말하지 않으려는 것이다.
-  initSync();
+  // 처음 연 기기가 공개된 기록으로 넘어가는 것은, 무엇을 열어 두었거나 적는 중이면 하지 않는다.
+  initSync({ busy: () => isLayerOpen() || typing() });
   route = parseRoute();
   render();
 
